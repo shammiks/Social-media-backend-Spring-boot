@@ -32,7 +32,7 @@ public interface FollowRepository extends JpaRepository<Follow, Long> {
     @Query("SELECT f FROM Follow f WHERE f.followee.id = :followeeId")
     Page<Follow> findByFolloweeId(@Param("followeeId") Long followeeId, Pageable pageable);
 
-    void deleteByFollowerIdAndFolloweeId(Long followerId, Long followeeId);
+    int deleteByFollowerIdAndFolloweeId(Long followerId, Long followeeId);
 
 
     @Query("SELECT f FROM Follow f WHERE f.follower.id = :followerId")

@@ -36,6 +36,9 @@ public class SecurityConfig {
                         .requestMatchers("/api/posts/**").hasAnyRole("USER", "ADMIN")
                         .requestMatchers("/api/posts/report/**").hasRole("USER")
                         .requestMatchers("/api/users/**").authenticated()
+                        .requestMatchers("/api/follow/**").hasAnyRole("USER", "ADMIN")     // ← NEW
+                        .requestMatchers("/api/bookmarks/**").hasAnyRole("USER", "ADMIN")  // ← NEW
+                        .requestMatchers("/api/comments/**").hasAnyRole("USER", "ADMIN")   // ← NEW
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS))

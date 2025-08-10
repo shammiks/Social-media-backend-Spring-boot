@@ -33,6 +33,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         try {
             final String authHeader = request.getHeader("Authorization");
+            final String requestPath = request.getRequestURI();
 
             if (authHeader == null || !authHeader.startsWith("Bearer ")) {
                 filterChain.doFilter(request, response);
@@ -40,11 +41,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             }
 
             final String jwt = authHeader.substring(7);
+
             final String userEmail = jwtService.extractEmail(jwt);
 
             if (userEmail != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+
+
                 User user = userRepository.findByEmail(userEmail)
-                        .orElseThrow(() -> new RuntimeException("User not found"));
+                        .orElseThrow(() -> {
+                            return new RuntimeException("User not found: " + userEmail);
+                        });
+
 
                 if (!jwtService.isTokenValid(jwt, user)) {
                     sendError(response, HttpServletResponse.SC_UNAUTHORIZED, "Invalid token");
@@ -52,6 +59,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 }
 
                 String role = jwtService.extractRole(jwt);
+
                 List<SimpleGrantedAuthority> authorities = Collections.singletonList(
                         new SimpleGrantedAuthority("ROLE_" + role)
                 );
@@ -63,10 +71,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
                 authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                 SecurityContextHolder.getContext().setAuthentication(authToken);
+
             }
 
             filterChain.doFilter(request, response);
         } catch (Exception ex) {
+            ex.printStackTrace(); // This will show the full stack trace
+
             if (!response.isCommitted()) {
                 sendError(response, HttpServletResponse.SC_UNAUTHORIZED, "Authentication failed");
             }

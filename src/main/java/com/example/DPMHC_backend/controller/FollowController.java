@@ -19,7 +19,6 @@ import org.springframework.web.bind.annotation.*;
 public class FollowController {
 
     private final FollowService followService;
-    private final UserRepository userRepository;
 
     // ========== MAIN ENDPOINTS ==========
     @PostMapping("/toggle")
@@ -27,10 +26,9 @@ public class FollowController {
             @RequestParam Long followeeId) {
 
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        String email = authentication.getName(); // assuming username = email
 
-        User currentUser = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+        // Get the User object directly from authentication principal
+        User currentUser = (User) authentication.getPrincipal();
 
         return ResponseEntity.ok(
                 followService.toggleFollow(currentUser.getId(), followeeId)
@@ -41,13 +39,10 @@ public class FollowController {
     public ResponseEntity<FollowStatusDTO> getFollowStatus(
             @RequestParam Long followeeId) {
 
-        // Get authentication details from Spring Security
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        String email = authentication.getName(); // assuming the principal is email/username
 
-        // Load full User entity
-        User currentUser = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+        // Get the User object directly from authentication principal
+        User currentUser = (User) authentication.getPrincipal();
 
         return ResponseEntity.ok(
                 followService.getFollowStatus(currentUser.getId(), followeeId)
@@ -81,13 +76,23 @@ public class FollowController {
         );
     }
 
-    // Update your existing FollowController with these changes
+    @GetMapping("/count/following/{userId}")
+    public ResponseEntity<Long> countFollowing(@PathVariable Long userId) {
+        return ResponseEntity.ok(
+                followService.countFollowing(userId)
+        );
+    }
+
+    // ========== FOLLOW/UNFOLLOW ENDPOINTS ==========
     @PostMapping("/follow/{userId}")
     public ResponseEntity<FollowStatusDTO> followUser(
-            @PathVariable Long userId,
-            Authentication authentication) {
+            @PathVariable Long userId) {
 
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+
+        // Get the User object directly from authentication principal
         User currentUser = (User) authentication.getPrincipal();
+
         return ResponseEntity.ok(
                 followService.followUser(currentUser.getId(), userId)
         );
@@ -95,22 +100,29 @@ public class FollowController {
 
     @PostMapping("/unfollow/{userId}")
     public ResponseEntity<FollowStatusDTO> unfollowUser(
-            @PathVariable Long userId,
-            Authentication authentication) {
+            @PathVariable Long userId) {
 
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+
+        // Get the User object directly from authentication principal
         User currentUser = (User) authentication.getPrincipal();
+
         return ResponseEntity.ok(
                 followService.unfollowUser(currentUser.getId(), userId)
         );
     }
 
-// Keep your existing endpoints but ensure they return FollowStatusDTO
-// with isFollowing and followersCount fields
+    @GetMapping("/status/{followeeId}")
+    public ResponseEntity<FollowStatusDTO> getFollowStatusPath(
+            @PathVariable Long followeeId) {
 
-    @GetMapping("/count/following/{userId}")
-    public ResponseEntity<Long> countFollowing(@PathVariable Long userId) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+
+        // Get the User object directly from authentication principal
+        User currentUser = (User) authentication.getPrincipal();
+
         return ResponseEntity.ok(
-                followService.countFollowing(userId)
+                followService.getFollowStatus(currentUser.getId(), followeeId)
         );
     }
 }

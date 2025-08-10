@@ -50,5 +50,14 @@ public class User {
 
     private Date updatedAt;
 
+    @Override
+    public String toString() {
+        return "User{" +
+                "id=" + id +
+                ", username='" + username + '\'' +
+                ", email='" + email + '\'' +
+                '}';
+        // Don't include likedPosts or other lazy collections in toString()
+    }
 
 }
