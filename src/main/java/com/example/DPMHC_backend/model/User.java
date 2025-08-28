@@ -1,5 +1,6 @@
 package com.example.DPMHC_backend.model;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -19,6 +20,8 @@ public class User {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @JsonProperty("username")
+    @Column(name = "username", nullable = false, unique = true)
     private String username;
 
     private String email;
@@ -37,6 +40,10 @@ public class User {
     private String password;
 
     private String avatar;
+
+
+    @Column(name = "profile_image_url")
+    private String profileImageUrl;
 
     private String bio;
 

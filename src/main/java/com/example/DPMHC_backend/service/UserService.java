@@ -9,6 +9,8 @@ import com.example.DPMHC_backend.repository.PostRepository;
 import com.example.DPMHC_backend.repository.UserRepository;
 import com.example.DPMHC_backend.security.JwtService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -28,6 +30,7 @@ import java.util.Date;
 import java.util.Optional;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class UserService {
 
@@ -41,6 +44,8 @@ public class UserService {
     private final PostRepository postRepository;
     private final PostService postService; // Add this dependency
 
+    @Value("${app.base.url}")
+    private String baseUrl;
 
 
     private final List<String> allowedDomains = List.of("gmail.com", "yahoo.com", "outlook.com");
@@ -53,8 +58,29 @@ public class UserService {
 
     public String register(User user) {
         validateEmailDomain(user.getEmail());
-        if (userRepository.existsByEmail(user.getEmail())) throw new RuntimeException("Email already registered");
-        if (userRepository.existsByUsername(user.getUsername())) throw new RuntimeException("Username already taken");
+        // Check if username is null and handle it
+        if (user.getUsername() == null || user.getUsername().trim().isEmpty()) {
+            throw new RuntimeException("Username cannot be null or empty");
+        }
+        String normalizedUsername = user.getUsername().trim();
+        user.setUsername(normalizedUsername);
+
+        log.info("Checking if email exists: {}", user.getEmail());
+        boolean emailExists = userRepository.existsByEmailIgnoreCase(user.getEmail());
+        log.info("Email exists: {}", emailExists);
+
+        if (emailExists) {
+            throw new RuntimeException("Email already registered");
+        }
+
+//        if (userRepository.existsByEmail(user.getEmail())) {
+//            throw new RuntimeException("Email already registered");
+//        }
+
+        // Check for case-insensitive username existence
+        if (userRepository.existsByUsernameIgnoreCase(normalizedUsername)) {
+            throw new RuntimeException("Username already taken");
+        };
 
         user.setPassword(passwordEncoder.encode(user.getPassword()));
         user.setRole(Role.USER);
@@ -75,7 +101,7 @@ public class UserService {
                 .build();
         tokenRepository.save(verificationToken);
 
-        String link = "http://localhost:8080/api/auth/verify?token=" + token;
+        String link = baseUrl + "/api/auth/verify?token=" + token;
         emailService.sendVerificationEmail(user.getEmail(), link);
 
         return "Verification email sent. Please check your inbox.";
@@ -137,7 +163,7 @@ public class UserService {
 
         resetTokenRepository.save(resetToken);
 
-        String resetLink = "http://localhost:8080/api/auth/reset-password-form?token=" + token;
+        String resetLink = baseUrl + "/api/auth/reset-password-form?token=" + token;
         emailService.sendPasswordResetEmail(user.getEmail(), resetLink);
 
         return "Reset link sent to your email";
