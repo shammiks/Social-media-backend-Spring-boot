@@ -120,6 +120,24 @@ public class AuthController {
         }
     }
 
+    @PutMapping("/me/bio")
+    public ResponseEntity<UserDTO> updateBio(@RequestBody BioUpdateRequest request, Authentication authentication) {
+        try {
+            if (authentication == null || !authentication.isAuthenticated()) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+            }
+
+            User currentUser = (User) authentication.getPrincipal();
+            UserDTO updatedUser = userService.updateBio(request.getBio(), currentUser.getEmail());
+            return ResponseEntity.ok(updatedUser);
+        } catch (ClassCastException e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(UserDTO.builder().build()); // Return empty DTO with error
+        }
+    }
+
     @GetMapping("/users/by-username/{username}")
     public ResponseEntity<UserDTO> getUserByUsername(@PathVariable String username) {
         User user = (User) userRepository.findByUsername(username)
@@ -171,7 +189,10 @@ public class AuthController {
         private String token;
         private UserDTO user;
     }
+    @Data
+    static class BioUpdateRequest {
+        private String bio;
+    }
 
 
 }
-

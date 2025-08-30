@@ -209,6 +209,21 @@ public class UserService {
         return mapToDTO(user);
     }
 
+    @Transactional
+    public UserDTO updateBio(String bio, String email) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new UsernameNotFoundException("User not found"));
+
+        // Validate bio length (optional - you can adjust the limit)
+        if (bio != null && bio.length() > 500) {
+            throw new RuntimeException("Bio cannot exceed 500 characters");
+        }
+
+        user.setBio(bio);
+        user.setUpdatedAt(new Date());
+        userRepository.save(user);
+        return mapToDTO(user);
+    }
 
     @Transactional(readOnly = true)
     public Page<PostDTO> getPostsByUser(Long userId, Pageable pageable, String currentUserEmail) {

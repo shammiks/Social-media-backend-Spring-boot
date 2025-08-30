@@ -1,9 +1,7 @@
 package com.example.DPMHC_backend.repository;
 
-import com.example.DPMHC_backend.model.Bookmark;
 import com.example.DPMHC_backend.model.Comment;
 import com.example.DPMHC_backend.model.Post;
-import com.example.DPMHC_backend.model.User;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -11,25 +9,25 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
-import java.util.Optional;
 
 public interface CommentRepository extends JpaRepository<Comment, Long> {
     List<Comment> findAllByPost(Post post);
 
-    Page<Bookmark> findByUserOrderByCreatedAtDesc(User user, Pageable pageable);
+    // Find only top-level comments (no parent comment) for a post
+    @Query("SELECT c FROM Comment c WHERE c.post.id = :postId AND c.parentComment IS NULL ORDER BY c.createdAt DESC")
+    Page<Comment> findByPostIdAndParentCommentIsNullOrderByCreatedAtDesc(@Param("postId") Long postId, Pageable pageable);
 
-    List<Bookmark> findByUserOrderByCreatedAtDesc(User user);
-
-    Optional<Bookmark> findByUserAndPost(User user, Post post);
-    boolean existsByUserAndPost(User user, Post post);
-
+    // Find all comments (including replies) for a post
     @Query("SELECT c FROM Comment c WHERE c.post.id = :postId ORDER BY c.createdAt DESC")
     Page<Comment> findByPostIdOrderByCreatedAtDesc(@Param("postId") Long postId, Pageable pageable);
 
-    // Count comments for a specific post
+    // Find replies for a parent comment
+    List<Comment> findByParentCommentOrderByCreatedAtAsc(Comment parentComment);
+
+    // Count total comments for a specific post (including replies)
     long countByPost(Post post);
 
-    // Find comments with user details (to avoid N+1 queries)
-    @Query("SELECT c FROM Comment c JOIN FETCH c.user WHERE c.post.id = :postId ORDER BY c.createdAt DESC")
-    List<Comment> findByPostIdWithUserOrderByCreatedAtDesc(@Param("postId") Long postId);
+    // Count only top-level comments for a post
+    @Query("SELECT COUNT(c) FROM Comment c WHERE c.post = :post AND c.parentComment IS NULL")
+    long countByPostAndParentCommentIsNull(@Param("post") Post post);
 }
