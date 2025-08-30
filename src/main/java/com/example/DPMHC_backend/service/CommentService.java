@@ -44,6 +44,21 @@ public class CommentService {
         return commentRepository.save(comment);
     }
 
+    @Transactional
+    public Comment editComment(Long commentId, String content, String userEmail) {
+        Comment comment = commentRepository.findById(commentId)
+                .orElseThrow(() -> new RuntimeException("Comment not found"));
+
+        if (!comment.getUser().getEmail().equals(userEmail)) {
+            throw new RuntimeException("You are not authorized to edit this comment.");
+        }
+
+        comment.setContent(content);
+        comment.setUpdatedAt(new Date());
+
+        return commentRepository.save(comment);
+    }
+
     public Page<CommentDTO> getComments(Long postId, Pageable pageable) {
         return commentRepository.findByPostIdOrderByCreatedAtDesc(postId, pageable)
                 .map(this::mapToDTO);
@@ -54,13 +69,9 @@ public class CommentService {
         Post post = postRepository.findById(postId)
                 .orElseThrow(() -> new RuntimeException("Post not found"));
 
-        return commentRepository.findAllByPost(post).stream().map(comment -> CommentDTO.builder()
-                .id(comment.getId())
-                .content(comment.getContent())
-                .createdAt(comment.getCreatedAt().toString())
-                .username(comment.getUser().getUsername()) // 👈 here
-                .build()
-        ).toList();
+        return commentRepository.findAllByPost(post).stream()
+                .map(this::mapToDTO)
+                .toList();
     }
 
     public void deleteComment(Long commentId, String userEmail) {
@@ -83,6 +94,9 @@ public class CommentService {
                 .id(comment.getId())
                 .content(comment.getContent())
                 .createdAt(FORMATTER.format(comment.getCreatedAt().toInstant()))
+                .updatedAt(comment.getUpdatedAt() != null ?
+                    FORMATTER.format(comment.getUpdatedAt().toInstant()) : null)
+                .edited(comment.getUpdatedAt() != null)
                 .postId(comment.getPost().getId())
                 .username(comment.getUser().getUsername())
                 .userId(comment.getUser().getId())

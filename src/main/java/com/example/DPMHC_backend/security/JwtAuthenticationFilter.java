@@ -55,6 +55,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             final String jwt = authHeader.substring(7);
             logger.debug("JWT token extracted, length: {}", jwt.length());
 
+
             // Extract email from JWT
             final String userEmail;
             try {

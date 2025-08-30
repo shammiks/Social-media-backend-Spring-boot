@@ -14,8 +14,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
-
 @RestController
 @RequestMapping("/api/comments")
 @RequiredArgsConstructor
@@ -29,12 +27,31 @@ public class CommentController {
                                                  @AuthenticationPrincipal User user) {
         Comment comment = commentService.addComment(postId, request.getContent(), user.getEmail());
 
-        // 👇 Convert to anonymous response
         CommentDTO dto = CommentDTO.builder()
                 .id(comment.getId())
                 .content(comment.getContent())
                 .createdAt(comment.getCreatedAt().toString())
                 .username(comment.getUser().getUsername())
+                .build();
+
+        return ResponseEntity.ok(dto);
+    }
+
+    @PutMapping("/{commentId}")
+    public ResponseEntity<CommentDTO> editComment(@PathVariable Long commentId,
+                                                  @RequestBody CommentRequest request,
+                                                  @AuthenticationPrincipal User user) {
+        Comment comment = commentService.editComment(commentId, request.getContent(), user.getEmail());
+
+        CommentDTO dto = CommentDTO.builder()
+                .id(comment.getId())
+                .content(comment.getContent())
+                .createdAt(comment.getCreatedAt().toString())
+                .updatedAt(comment.getUpdatedAt() != null ? comment.getUpdatedAt().toString() : null)
+                .edited(comment.getUpdatedAt() != null)
+                .username(comment.getUser().getUsername())
+                .userId(comment.getUser().getId())
+                .postId(comment.getPost().getId())
                 .build();
 
         return ResponseEntity.ok(dto);
@@ -53,7 +70,6 @@ public class CommentController {
 
         return commentService.getComments(postId, sortedPageable);
     }
-
 
     @DeleteMapping("/comments/{id}")
     public ResponseEntity<Void> deleteComment(@PathVariable Long id, @AuthenticationPrincipal User user) {
