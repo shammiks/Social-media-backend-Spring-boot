@@ -20,6 +20,8 @@ public class CommentDTO {
     private String username;
     private Long userId;
     private Long postId;
+    private String avatar; // NEW: User avatar for frontend
+    private String profileImageUrl; // NEW: User profile image for frontend
 
     // Reply functionality
     private Long parentCommentId;

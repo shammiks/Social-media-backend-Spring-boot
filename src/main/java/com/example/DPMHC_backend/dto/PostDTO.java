@@ -25,4 +25,6 @@ public class PostDTO {
     private Date createdAt;
     private String username;
     private Long userId; // NEW: Useful for frontend
+    private String avatar; // NEW: User avatar for frontend
+    private String profileImageUrl; // NEW: User profile image for frontend
 }

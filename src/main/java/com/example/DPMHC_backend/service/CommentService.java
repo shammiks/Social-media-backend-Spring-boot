@@ -193,6 +193,8 @@ public class CommentService {
                 .postId(comment.getPost().getId())
                 .username(comment.getUser().getUsername())
                 .userId(comment.getUser().getId())
+                .avatar(comment.getUser().getAvatar())
+                .profileImageUrl(comment.getUser().getProfileImageUrl())
                 .parentCommentId(comment.getParentComment() != null ?
                     comment.getParentComment().getId() : null)
                 .replyCount(comment.getReplies().size())

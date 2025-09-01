@@ -29,9 +29,7 @@ public class UserDTO {
         this.id = user.getId();
         this.username = user.getUsername();
         this.email = user.getEmail();
-        // Use avatar field instead of profileImageUrl since that's where updates go
-        this.profileImageUrl = user.getAvatar() != null ? user.getAvatar() : user.getProfileImageUrl();
-        this.avatar = user.getAvatar();
+        this.profileImageUrl = user.getProfileImageUrl();
         this.bio = user.getBio();
         this.createdAt = user.getCreatedAt();
         // isOnline and lastSeen would be set by the service layer

@@ -216,21 +216,23 @@ public class PostService {
 
         long commentsCount = commentRepository.countByPost(post);
 
-        return PostDTO.builder()
-                .id(post.getId())
-                .content(post.getContent())
-                .imageUrl(post.getImageUrl())
-                .videoUrl(post.getVideoUrl())
-                .pdfUrl(post.getPdfUrl())
-                .isPublic(post.isPublic())
-                .likes(post.getLikesCount()) // Or use getLikesCount() if you have that field
-                .isLikedByCurrentUser(isLiked)
-                .commentsCount((int) commentsCount)
-                .isBookmarkedByCurrentUser(isBookmarked)
-                .createdAt(post.getCreatedAt())
-                .username(post.getUser().getUsername())
-                .userId(post.getUser().getId())
-                .build();
+    return PostDTO.builder()
+        .id(post.getId())
+        .content(post.getContent())
+        .imageUrl(post.getImageUrl())
+        .videoUrl(post.getVideoUrl())
+        .pdfUrl(post.getPdfUrl())
+        .isPublic(post.isPublic())
+        .likes(post.getLikesCount())
+        .isLikedByCurrentUser(isLiked)
+        .commentsCount((int) commentsCount)
+        .isBookmarkedByCurrentUser(isBookmarked)
+        .createdAt(post.getCreatedAt())
+        .username(post.getUser().getUsername())
+        .userId(post.getUser().getId())
+        .avatar(post.getUser().getAvatar())
+        .profileImageUrl(post.getUser().getProfileImageUrl())
+        .build();
     }
 
     @Data
