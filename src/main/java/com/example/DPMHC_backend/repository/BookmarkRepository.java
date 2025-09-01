@@ -6,6 +6,7 @@ import com.example.DPMHC_backend.model.User;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -17,6 +18,10 @@ public interface BookmarkRepository extends JpaRepository<Bookmark, Long> {
     Optional<Bookmark> findByUserAndPost(User user, Post post);
 
     boolean existsByPostAndUserEmail(Post post, String email);
+
+    @Modifying
+    @Query("DELETE FROM Bookmark b WHERE b.post.id = :postId")
+    void deleteByPostId(@Param("postId") Long postId);
 
     List<Bookmark> findByUserOrderByCreatedAtDesc(User user);
 

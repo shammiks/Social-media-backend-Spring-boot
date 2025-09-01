@@ -3,6 +3,8 @@ package com.example.DPMHC_backend.controller;
 import com.example.DPMHC_backend.dto.*;
 import com.example.DPMHC_backend.service.MessageService;
 import com.example.DPMHC_backend.model.User;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -30,8 +32,27 @@ public class MessageController {
      */
     @PostMapping
     public ResponseEntity<MessageDTO> sendMessage(
-            @Valid @RequestBody MessageSendRequestDTO request,
+            HttpServletRequest httpRequest,
+            @RequestBody String rawBody,
             Authentication authentication) {
+
+        // Debug the raw request
+        log.info("DEBUG: Content-Type: {}", httpRequest.getContentType());
+        log.info("DEBUG: Raw request body: {}", rawBody);
+
+        // Manual deserialization to debug
+        ObjectMapper mapper = new ObjectMapper();
+        MessageSendRequestDTO request;
+
+        try {
+            request = mapper.readValue(rawBody, MessageSendRequestDTO.class);
+            log.info("DEBUG: Deserialized DTO: {}", request);
+            log.info("DEBUG: After deserialization - MediaUrl: {}, MediaType: {}, MediaSize: {}",
+                    request.getMediaUrl(), request.getMediaType(), request.getMediaSize());
+        } catch (Exception e) {
+            log.error("DEBUG: Deserialization failed: ", e);
+            return ResponseEntity.badRequest().body(null);
+        }
 
         Long userId = getUserIdFromAuth(authentication);
         MessageDTO message = messageService.sendMessage(request, userId);

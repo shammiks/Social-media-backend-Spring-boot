@@ -72,7 +72,7 @@ public class WebSocketService {
     /**
      * Broadcast new message to all chat participants
      */
-    public void broadcastMessage(MessageDTO message) {
+    public void broadcastNewMessage(MessageDTO message) {
         try {
             // Get all participants of the chat
             List<ChatParticipant> participants = participantRepository

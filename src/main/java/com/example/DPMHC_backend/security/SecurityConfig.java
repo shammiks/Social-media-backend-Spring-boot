@@ -50,7 +50,9 @@ public class SecurityConfig {
                                     "/api/auth/reset-password",
                                     "/actuator/health",
                                     "/uploads/**",
-                                    "/error"
+                                    "/error",
+                                    "/ws/**",
+                                    "/ws/notifications/**"
                             ).permitAll()
 
                             // Authenticated endpoints - require valid JWT token

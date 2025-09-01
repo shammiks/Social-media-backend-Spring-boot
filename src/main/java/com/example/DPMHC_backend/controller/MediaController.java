@@ -2,6 +2,7 @@ package com.example.DPMHC_backend.controller;
 
 import com.example.DPMHC_backend.dto.MediaUploadDTO;
 import com.example.DPMHC_backend.model.MediaFile;
+import com.example.DPMHC_backend.model.User;
 import com.example.DPMHC_backend.service.MediaService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,7 +25,6 @@ import java.util.Map;
 @RequestMapping("/api/media")
 @RequiredArgsConstructor
 @Slf4j
-@CrossOrigin(origins = "*")
 public class MediaController {
 
     private final MediaService mediaService;
@@ -251,6 +251,10 @@ public class MediaController {
         if (authentication == null || authentication.getPrincipal() == null) {
             throw new RuntimeException("Authentication required");
         }
-        return Long.valueOf(authentication.getName());
+        Object principal = authentication.getPrincipal();
+        if (principal instanceof User) {
+            return ((User) principal).getId();
+        }
+        throw new RuntimeException("Invalid authentication principal");
     }
 }

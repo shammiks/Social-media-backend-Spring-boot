@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Real-time Notifications Example</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.6.1/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+</head>
+<body>
+    <h2>Real-time Notifications Demo</h2>
+    <div id="notifications"></div>
+
+    <script>
+        // WebSocket connection for real-time notifications
+        const socket = new SockJS('http://localhost:8080/ws/notifications');
+        const stompClient = Stomp.over(socket);
+
+        stompClient.connect({}, function(frame) {
+            console.log('Connected: ' + frame);
+
+            // Subscribe to user-specific notifications
+            // Replace USER_ID with actual user ID
+            const userId = 'USER_ID';
+            stompClient.subscribe('/topic/notifications/' + userId, function(notification) {
+                const notificationData = JSON.parse(notification.body);
+                displayNotification(notificationData);
+            });
+        });
+
+        function displayNotification(notification) {
+            const notificationsDiv = document.getElementById('notifications');
+            const notificationElement = document.createElement('div');
+            notificationElement.className = 'notification';
+            notificationElement.innerHTML = `
+                <div class="notification-item ${notification.isRead ? 'read' : 'unread'}">
+                    <h4>${notification.title}</h4>
+                    <p>${notification.message}</p>
+                    <small>${notification.timeAgo}</small>
+                    <span class="priority-${notification.priority.toLowerCase()}">${notification.priority}</span>
+                </div>
+            `;
+            notificationsDiv.insertBefore(notificationElement, notificationsDiv.firstChild);
+        }
+
+        // Example API calls for notification management
+        async function markAsRead(notificationId) {
+            await fetch(`/api/notifications/${notificationId}/read`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': 'Bearer ' + localStorage.getItem('token')
+                }
+            });
+        }
+
+        async function getUnreadCount() {
+            const response = await fetch('/api/notifications/badge-count', {
+                headers: {
+                    'Authorization': 'Bearer ' + localStorage.getItem('token')
+                }
+            });
+            const data = await response.json();
+            return data.count;
+        }
+    </script>
+
+    <style>
+        .notification-item {
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 5px;
+        }
+        .unread { background-color: #f0f8ff; }
+        .read { background-color: #f9f9f9; }
+        .priority-high { color: red; font-weight: bold; }
+        .priority-normal { color: green; }
+        .priority-low { color: gray; }
+    </style>
+</body>
+</html>

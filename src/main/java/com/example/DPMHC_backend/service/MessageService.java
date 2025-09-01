@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
@@ -26,74 +27,122 @@ public class MessageService {
     private final MessageReactionRepository reactionRepository;
     private final MessageReadStatusRepository readStatusRepository;
     private final UserRepository userRepository;
+    private final PinnedMessageRepository pinnedMessageRepository;
     private final com.example.DPMHC_backend.service.WebSocketService webSocketService;
 
     /**
      * Send a new message
      */
-    public MessageDTO sendMessage(MessageSendRequestDTO request, Long senderId) {
-        log.info("Sending message to chat: {} by user: {}", request.getChatId(), senderId);
+    @Transactional
+    public MessageDTO sendMessage(MessageSendRequestDTO request, Long userId) {
+        // Debug logging to see what's being received
+        log.info("Received message send request: {}", request);
+        log.info("Sending message - Content: {}, MessageType: {}, MediaUrl: {}",
+                request.getContent(), request.getMessageType(), request.getMediaUrl());
 
-        // Validate request
-        if (!request.isValid()) {
-            throw new RuntimeException("Invalid message content");
+        // Enhanced validation that handles media messages properly
+        if (request.getMessageType() == null) {
+            throw new RuntimeException("Message type is required");
         }
 
-        // Verify chat exists and user is participant
+        // For text/emoji messages, content is required
+        if (request.getMessageType() == Message.MessageType.TEXT ||
+                request.getMessageType() == Message.MessageType.EMOJI) {
+            if (request.getContent() == null || request.getContent().trim().isEmpty()) {
+                throw new RuntimeException("Content is required for text messages");
+            }
+        }
+
+        // For media messages, mediaUrl is required
+        if (request.getMessageType() == Message.MessageType.IMAGE ||
+                request.getMessageType() == Message.MessageType.VIDEO ||
+                request.getMessageType() == Message.MessageType.AUDIO ||
+                request.getMessageType() == Message.MessageType.DOCUMENT) {
+            if (request.getMediaUrl() == null || request.getMediaUrl().trim().isEmpty()) {
+                throw new RuntimeException("Media URL is required for media messages");
+            }
+        }
+
+        User sender = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("Sender not found"));
+
         Chat chat = chatRepository.findById(request.getChatId())
                 .orElseThrow(() -> new RuntimeException("Chat not found"));
 
-        if (!chatRepository.isUserParticipantOfChat(request.getChatId(), senderId)) {
+        // Check if user is participant of the chat using existing repository
+        if (!chatRepository.isUserParticipantOfChat(request.getChatId(), userId)) {
             throw new RuntimeException("User is not a participant of this chat");
         }
 
-        User sender = userRepository.findById(senderId)
-                .orElseThrow(() -> new RuntimeException("Sender not found"));
+        // Handle reply validation
+        Message replyToMessage = null;
+        if (request.getReplyToId() != null) {
+            replyToMessage = messageRepository.findById(request.getReplyToId())
+                    .orElseThrow(() -> new RuntimeException("Reply message not found"));
 
-        // Create message
-        Message message = new Message();
-        message.setChat(chat);
-        message.setSender(sender);
-        message.setContent(request.getContent());
-        message.setMessageType(request.getMessageType());
-        message.setMediaUrl(request.getMediaUrl());
-        message.setMediaType(request.getMediaType());
-        message.setMediaSize(request.getMediaSize());
-        message.setThumbnailUrl(request.getThumbnailUrl());
-        message.setReplyToId(request.getReplyToId());
+            // Ensure the reply message belongs to the same chat
+            if (!replyToMessage.getChat().getId().equals(request.getChatId())) {
+                throw new RuntimeException("Cannot reply to message from different chat");
+            }
+        }
+
+        // Create the message
+        Message message = Message.builder()
+                .content(request.getContent()) // This can be null for media messages
+                .messageType(request.getMessageType())
+                .mediaUrl(request.getMediaUrl())
+                .mediaType(request.getMediaType())
+                .mediaSize(request.getMediaSize())
+                .thumbnailUrl(request.getThumbnailUrl())
+                .isEdited(false)
+                .isDeleted(false)
+                .isPinned(false)
+                .sender(sender)
+                .chat(chat)
+                .replyToId(replyToMessage != null ? replyToMessage.getId() : null)
+                .build();
 
         Message savedMessage = messageRepository.save(message);
+        log.info("DEBUG: Saved message with ID: {}, MediaUrl: {}, MessageType: {}",
+                savedMessage.getId(), savedMessage.getMediaUrl(), savedMessage.getMessageType());
 
-        // Update chat's last message time
+        // Update chat's last message timestamp
         chat.setLastMessageAt(LocalDateTime.now());
         chatRepository.save(chat);
 
-        // Create read status for all participants
+        // Create read statuses for all participants
         createReadStatusForAllParticipants(savedMessage);
 
-        // Mark as read for sender
-        markAsReadForUser(savedMessage.getId(), senderId);
+        // Broadcast message via WebSocket
+        MessageDTO messageDTO = new MessageDTO(savedMessage);
+        webSocketService.broadcastNewMessage(messageDTO);
 
-        MessageDTO messageDTO = convertToMessageDTO(savedMessage, senderId);
-
-        // Send real-time notification
-        webSocketService.broadcastMessage(messageDTO);
-
-        log.info("Message sent with ID: {}", savedMessage.getId());
         return messageDTO;
     }
 
     /**
      * Get messages in a chat with pagination
      */
-    @Transactional(readOnly = true)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Page<MessageDTO> getChatMessages(Long chatId, Long userId, Pageable pageable) {
         // Verify user is participant
         if (!chatRepository.isUserParticipantOfChat(chatId, userId)) {
             throw new RuntimeException("User is not a participant of this chat");
         }
 
+        // ADD THIS DEBUG LOGGING:
+        log.info("DEBUG: Querying messages for chatId: {}, pageable: {}", chatId, pageable);
+
         Page<Message> messages = messageRepository.findMessagesByChatId(chatId, pageable);
+
+        log.info("DEBUG: Found {} messages, total elements: {}",
+                messages.getContent().size(), messages.getTotalElements());
+
+        messages.getContent().forEach(msg ->
+                log.info("DEBUG: Message - ID: {}, Type: {}, MediaUrl: {}, CreatedAt: {}",
+                        msg.getId(), msg.getMessageType(), msg.getMediaUrl(), msg.getCreatedAt())
+        );
+
         return messages.map(message -> convertToMessageDTO(message, userId));
     }
 
@@ -166,23 +215,39 @@ public class MessageService {
     }
 
     /**
-     * Pin/Unpin a message
+     * Pin/Unpin a message (user-specific)
      */
     public MessageDTO togglePinMessage(Long messageId, Long userId) {
         Message message = messageRepository.findById(messageId)
                 .orElseThrow(() -> new RuntimeException("Message not found"));
 
-        // Only admins can pin messages
-        if (!participantRepository.isUserAdminOrOwner(message.getChat().getId(), userId)) {
-            throw new RuntimeException("Only admins can pin messages");
+        // Only allow pinning if user is a participant
+        if (!chatRepository.isUserParticipantOfChat(message.getChat().getId(), userId)) {
+            throw new RuntimeException("User is not a participant of this chat");
         }
 
-        message.setIsPinned(!message.getIsPinned());
-        Message updatedMessage = messageRepository.save(message);
+        PinnedMessage existingPin = pinnedMessageRepository.findByUserIdAndMessageId(userId, messageId);
+        boolean isNowPinned;
+        if (existingPin != null) {
+            // Unpin
+            pinnedMessageRepository.deleteByUserIdAndMessageId(userId, messageId);
+            isNowPinned = false;
+        } else {
+            // Pin
+            User user = userRepository.findById(userId)
+                    .orElseThrow(() -> new RuntimeException("User not found"));
+            PinnedMessage pin = PinnedMessage.builder()
+                    .user(user)
+                    .message(message)
+                    .build();
+            pinnedMessageRepository.save(pin);
+            isNowPinned = true;
+        }
 
-        MessageDTO messageDTO = convertToMessageDTO(updatedMessage, userId);
+        MessageDTO messageDTO = convertToMessageDTO(message, userId);
+    messageDTO.setIsPinned(isNowPinned); // Optionally set a field in DTO if needed
 
-        // Broadcast pin status change
+        // Broadcast pin status change (user-specific, so may want to notify only this user)
         webSocketService.broadcastMessageUpdate(messageDTO);
 
         return messageDTO;
@@ -290,7 +355,7 @@ public class MessageService {
     }
 
     /**
-     * Get pinned messages in a chat
+     * Get pinned messages in a chat (user-specific)
      */
     @Transactional(readOnly = true)
     public List<MessageDTO> getPinnedMessages(Long chatId, Long userId) {
@@ -299,9 +364,9 @@ public class MessageService {
             throw new RuntimeException("User is not a participant of this chat");
         }
 
-        List<Message> pinnedMessages = messageRepository.findPinnedMessagesInChat(chatId);
-        return pinnedMessages.stream()
-                .map(message -> convertToMessageDTO(message, userId))
+        List<PinnedMessage> pins = pinnedMessageRepository.findByUserIdAndMessage_Chat_Id(userId, chatId);
+        return pins.stream()
+                .map(pin -> convertToMessageDTO(pin.getMessage(), userId))
                 .collect(Collectors.toList());
     }
 
@@ -353,32 +418,36 @@ public class MessageService {
     }
 
     private MessageDTO convertToMessageDTO(Message message, Long currentUserId) {
-        MessageDTO dto = MessageDTO.fromEntity(message);
+        // Use the constructor from MessageDTO since it handles conversion
+        MessageDTO dto = new MessageDTO(message);
 
-        // Set sender info
+        // Set additional fields that might not be handled by constructor
         if (message.getSender() != null) {
-            dto.setSender(new UserDTO(message.getSender()));
+            UserDTO senderDTO = new UserDTO();
+            senderDTO.setId(message.getSender().getId());
+            senderDTO.setUsername(message.getSender().getUsername());
+            senderDTO.setEmail(message.getSender().getEmail());
+            senderDTO.setProfileImageUrl(message.getSender().getProfileImageUrl());
+            dto.setSender(senderDTO);
         }
 
-        // Set reply-to message if exists
+        // Set reply message if exists
         if (message.getReplyToId() != null) {
-            Optional<Message> replyToMessage = messageRepository.findById(message.getReplyToId());
-            if (replyToMessage.isPresent() && !replyToMessage.get().getIsDeleted()) {
-                dto.setReplyToMessage(MessageDTO.fromEntity(replyToMessage.get()));
+            Optional<Message> replyMessage = messageRepository.findById(message.getReplyToId());
+            if (replyMessage.isPresent()) {
+                dto.setReplyToMessage(new MessageDTO(replyMessage.get()));
             }
         }
 
         // Set read status for current user
         Optional<MessageReadStatus> readStatus = readStatusRepository
                 .findByMessageIdAndUserId(message.getId(), currentUserId);
-        if (readStatus.isPresent()) {
-            dto.setIsRead(readStatus.get().getReadAt() != null);
-            dto.setIsDelivered(readStatus.get().getIsDelivered());
-        }
+        dto.setIsRead(readStatus.isPresent() && readStatus.get().getReadAt() != null);
+        dto.setIsDelivered(readStatus.isPresent() && readStatus.get().getDeliveredAt() != null);
 
         // Count how many users have read this message
         Long readCount = readStatusRepository.countReadByMessageId(message.getId());
-        dto.setReadByCount(readCount.intValue());
+        dto.setReadByCount(readCount != null ? readCount.intValue() : 0);
 
         return dto;
     }

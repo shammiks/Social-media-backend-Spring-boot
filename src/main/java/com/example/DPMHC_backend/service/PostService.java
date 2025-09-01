@@ -15,6 +15,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Optional;
@@ -31,6 +32,7 @@ public class PostService {
     private final CommentRepository commentRepository;
     private final BookmarkRepository bookmarkRepository;
     private final RealTimeService realTimeService;
+    private final NotificationService notificationService; // Add notification service
 
     // CREATE POST
     @Transactional
@@ -82,6 +84,11 @@ public class PostService {
     public Page<PostDTO> getAllPosts(Pageable pageable, String currentUserEmail) {
         return postRepository.findAll(pageable)
                 .map(post -> mapToDTO(post, currentUserEmail));
+    }
+
+    public Post getPostById(Long postId) {
+        return postRepository.findById(postId)
+                .orElseThrow(() -> new RuntimeException("Post not found with id: " + postId));
     }
 
     @Transactional(readOnly = true)
@@ -159,9 +166,14 @@ public class PostService {
             throw new RuntimeException("Not authorized to delete this post");
         }
 
-        postRepository.delete(post);
-    }
+        commentRepository.deleteByPostId(postId);
 
+        likeRepository.deleteByPostId(postId);
+
+        bookmarkRepository.deleteByPostId(postId);
+
+        postRepository.deleteById(postId);
+    }
     // LIKES
     @Transactional
     public LikeResponse toggleLike(Long postId, String userEmail) {
@@ -186,6 +198,10 @@ public class PostService {
             likeRepository.save(like);
             post.setLikesCount(post.getLikesCount() + 1);
             postRepository.save(post);
+
+            // Trigger notification for post like
+            notificationService.handlePostLike(post.getUser().getEmail(), userEmail, postId);
+
             return new LikeResponse(true, post.getLikesCount());
         }
     }

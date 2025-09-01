@@ -6,6 +6,8 @@ import com.example.DPMHC_backend.model.User;
 import com.example.DPMHC_backend.service.PostService;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
+import com.example.DPMHC_backend.service.NotificationService;
+import com.example.DPMHC_backend.model.NotificationType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
@@ -22,6 +24,7 @@ import java.util.List;
 public class PostController {
 
     private final PostService postService;
+    private final NotificationService notificationService;
 
     @PostMapping("/upload")
     public ResponseEntity<PostDTO> createPost(
@@ -101,9 +104,34 @@ public class PostController {
             @PathVariable Long postId,
             @AuthenticationPrincipal User user
     ) {
+        // Your existing like logic
         PostService.LikeResponse response = postService.toggleLike(postId, user.getEmail());
+
+        // 🔥 NEW: Send notification if it's a new like
+        try {
+            // Get the post to find the owner
+            Post post = postService.getPostById(postId); // You might need to add this method to PostService
+
+            // Only send notification if:
+            // 1. It's a new like (not unlike)
+            // 2. User is not liking their own post
+            if (response.isLiked() && !user.getId().equals(post.getUser().getId())) {
+                notificationService.createNotification(
+                        post.getUser().getId(),     // recipient (post owner)
+                        user.getId(),               // actor (person who liked)
+                        NotificationType.LIKE,
+                        postId,                     // target (the post)
+                        null                        // no additional message
+                );
+            }
+        } catch (Exception e) {
+            // Log the error but don't fail the like operation
+            System.err.println("Failed to send like notification: " + e.getMessage());
+        }
+
         return ResponseEntity.ok(response);
     }
+
 
     @GetMapping("/{postId}/like-status")
     public ResponseEntity<Boolean> getLikeStatus(

@@ -5,6 +5,8 @@ import com.example.DPMHC_backend.dto.FollowStatusDTO;
 import com.example.DPMHC_backend.model.User;
 import com.example.DPMHC_backend.repository.UserRepository;
 import com.example.DPMHC_backend.service.FollowService;
+import com.example.DPMHC_backend.service.NotificationService;
+import com.example.DPMHC_backend.model.NotificationType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -19,6 +21,7 @@ import org.springframework.web.bind.annotation.*;
 public class FollowController {
 
     private final FollowService followService;
+    private final NotificationService notificationService;
 
     // ========== MAIN ENDPOINTS ==========
     @PostMapping("/toggle")
@@ -26,13 +29,31 @@ public class FollowController {
             @RequestParam Long followeeId) {
 
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-
-        // Get the User object directly from authentication principal
         User currentUser = (User) authentication.getPrincipal();
 
-        return ResponseEntity.ok(
-                followService.toggleFollow(currentUser.getId(), followeeId)
-        );
+        // Your existing follow logic
+        FollowStatusDTO response = followService.toggleFollow(currentUser.getId(), followeeId);
+
+        // 🔥 NEW: Send notification if it's a new follow
+        try {
+            // Only send notification if:
+            // 1. It's a new follow (not unfollow)
+            // 2. User is not following themselves
+            if (response.isFollowing() && !currentUser.getId().equals(followeeId)) {
+                notificationService.createNotification(
+                        followeeId,                 // recipient (person being followed)
+                        currentUser.getId(),        // actor (person who followed)
+                        NotificationType.FOLLOW,
+                        null,                       // no specific target
+                        null                        // no additional message
+                );
+            }
+        } catch (Exception e) {
+            // Log the error but don't fail the follow operation
+            System.err.println("Failed to send follow notification: " + e.getMessage());
+        }
+
+        return ResponseEntity.ok(response);
     }
 
     @GetMapping("/status")
@@ -89,13 +110,27 @@ public class FollowController {
             @PathVariable Long userId) {
 
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-
-        // Get the User object directly from authentication principal
         User currentUser = (User) authentication.getPrincipal();
 
-        return ResponseEntity.ok(
-                followService.followUser(currentUser.getId(), userId)
-        );
+        // Your existing follow logic
+        FollowStatusDTO response = followService.followUser(currentUser.getId(), userId);
+
+        // 🔥 NEW: Send notification for new follow
+        try {
+            if (!currentUser.getId().equals(userId)) {
+                notificationService.createNotification(
+                        userId,                     // recipient (person being followed)
+                        currentUser.getId(),        // actor (person who followed)
+                        NotificationType.FOLLOW,
+                        null,                       // no specific target
+                        null                        // no additional message
+                );
+            }
+        } catch (Exception e) {
+            System.err.println("Failed to send follow notification: " + e.getMessage());
+        }
+
+        return ResponseEntity.ok(response);
     }
 
     @PostMapping("/unfollow/{userId}")

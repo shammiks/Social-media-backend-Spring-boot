@@ -2,6 +2,7 @@ package com.example.DPMHC_backend.model;
 
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
@@ -16,6 +17,7 @@ import java.util.List;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
+@Builder
 public class Message {
 
     @Id
@@ -52,7 +54,7 @@ public class Message {
     @Column(name = "is_edited")
     private Boolean isEdited = false;
 
-    @Column(name = "is_deleted")
+    @Column(name = "is_deleted" , nullable = false)
     private Boolean isDeleted = false;
 
     @Column(name = "is_pinned")

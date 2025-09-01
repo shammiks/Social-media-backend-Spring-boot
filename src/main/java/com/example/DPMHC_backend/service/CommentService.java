@@ -29,6 +29,7 @@ public class CommentService {
     private final PostRepository postRepository;
     private final UserRepository userRepository;
     private final CommentLikeRepository commentLikeRepository;
+    private final NotificationService notificationService; // Add notification service
 
     @Transactional
     public Comment addComment(Long postId, String content, String userEmail) {
@@ -45,7 +46,12 @@ public class CommentService {
                 .createdAt(new Date())
                 .build();
 
-        return commentRepository.save(comment);
+        Comment savedComment = commentRepository.save(comment);
+
+        // Trigger notification for new comment
+        notificationService.handleComment(post.getUser().getEmail(), userEmail, postId, savedComment.getId());
+
+        return savedComment;
     }
 
     @Transactional
@@ -71,6 +77,10 @@ public class CommentService {
                     // In the future, this could be improved to get current user from security context
                     return mapToDTO(comment, null, true);
                 });
+    }
+    public Comment getCommentById(Long commentId) {
+        return commentRepository.findById(commentId)
+                .orElseThrow(() -> new RuntimeException("Comment not found with id: " + commentId));
     }
 
     public Page<CommentDTO> getCommentsWithUser(Long postId, Pageable pageable, String userEmail) {
@@ -117,7 +127,13 @@ public class CommentService {
                 .createdAt(new Date())
                 .build();
 
-        return commentRepository.save(reply);
+        Comment savedReply = commentRepository.save(reply);
+
+        // Trigger notification for comment reply
+        notificationService.handleCommentReply(parentComment.getUser().getEmail(), userEmail,
+                                              parentCommentId, savedReply.getId());
+
+        return savedReply;
     }
 
     @Transactional
@@ -140,6 +156,10 @@ public class CommentService {
                     .createdAt(new Date())
                     .build();
             commentLikeRepository.save(commentLike);
+
+            // Trigger notification for comment like
+            notificationService.handleCommentLike(comment.getUser().getEmail(), userEmail, commentId);
+
             return true; // liked
         }
     }
