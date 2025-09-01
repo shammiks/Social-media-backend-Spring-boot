@@ -30,6 +30,7 @@ public class UserDTO {
         this.username = user.getUsername();
         this.email = user.getEmail();
         this.profileImageUrl = user.getProfileImageUrl();
+        this.avatar = user.getAvatar();
         this.bio = user.getBio();
         this.createdAt = user.getCreatedAt();
         // isOnline and lastSeen would be set by the service layer

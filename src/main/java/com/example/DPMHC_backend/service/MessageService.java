@@ -428,6 +428,7 @@ public class MessageService {
             senderDTO.setUsername(message.getSender().getUsername());
             senderDTO.setEmail(message.getSender().getEmail());
             senderDTO.setProfileImageUrl(message.getSender().getProfileImageUrl());
+            senderDTO.setAvatar(message.getSender().getAvatar());
             dto.setSender(senderDTO);
         }
 
