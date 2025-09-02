@@ -32,7 +32,7 @@ public class CommentController {
     public ResponseEntity<CommentDTO> addComment(@PathVariable Long postId,
                                                  @RequestBody CommentRequest request,
                                                  @AuthenticationPrincipal User user) {
-        // Your existing comment logic
+        // Add comment through service (which handles notifications automatically)
         Comment comment = commentService.addComment(postId, request.getContent(), user.getEmail());
 
         CommentDTO dto = CommentDTO.builder()
@@ -42,25 +42,7 @@ public class CommentController {
                 .username(comment.getUser().getUsername())
                 .build();
 
-        // 🔥 NEW: Send notification to post owner
-        try {
-            // Get the post to find the owner
-            Post post = comment.getPost(); // or however you access the post from comment
-
-            // Only send notification if user is not commenting on their own post
-            if (!user.getId().equals(post.getUser().getId())) {
-                notificationService.createNotification(
-                        post.getUser().getId(),     // recipient (post owner)
-                        user.getId(),               // actor (person who commented)
-                        NotificationType.COMMENT,
-                        postId,                     // target (the post)
-                        request.getContent()        // comment content as message
-                );
-            }
-        } catch (Exception e) {
-            System.err.println("Failed to send comment notification: " + e.getMessage());
-        }
-
+        // Note: Notification is already handled in CommentService.addComment()
         return ResponseEntity.ok(dto);
     }
 
@@ -128,32 +110,12 @@ public class CommentController {
     @PostMapping("/{commentId}/like")
     public ResponseEntity<LikeResponse> toggleCommentLike(@PathVariable Long commentId,
                                                           @AuthenticationPrincipal User user) {
-        // Your existing comment like logic
+        // The CommentService.toggleCommentLike method already handles notifications automatically
         boolean liked = commentService.toggleCommentLike(commentId, user.getEmail());
 
         LikeResponse response = new LikeResponse(liked, liked ? "Comment liked" : "Comment unliked");
 
-        // 🔥 NEW: Send notification to comment owner
-        try {
-            if (liked) { // Only send notification for new likes, not unlikes
-                // Get the comment to find the owner
-                Comment comment = commentService.getCommentById(commentId); // You might need to add this method
-
-                // Only send notification if user is not liking their own comment
-                if (!user.getId().equals(comment.getUser().getId())) {
-                    notificationService.createNotification(
-                            comment.getUser().getId(),    // recipient (comment owner)
-                            user.getId(),                 // actor (person who liked comment)
-                            NotificationType.LIKE,
-                            comment.getPost().getId(),    // target (the post)
-                            null                          // no additional message
-                    );
-                }
-            }
-        } catch (Exception e) {
-            System.err.println("Failed to send comment like notification: " + e.getMessage());
-        }
-
+        // Note: Notification is already handled in CommentService.toggleCommentLike()
         return ResponseEntity.ok(response);
     }
 

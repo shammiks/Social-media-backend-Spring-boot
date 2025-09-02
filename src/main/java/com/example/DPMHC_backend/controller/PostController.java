@@ -104,34 +104,12 @@ public class PostController {
             @PathVariable Long postId,
             @AuthenticationPrincipal User user
     ) {
-        // Your existing like logic
+        // The PostService.toggleLike method already handles notifications automatically
         PostService.LikeResponse response = postService.toggleLike(postId, user.getEmail());
 
-        // 🔥 NEW: Send notification if it's a new like
-        try {
-            // Get the post to find the owner
-            Post post = postService.getPostById(postId); // You might need to add this method to PostService
-
-            // Only send notification if:
-            // 1. It's a new like (not unlike)
-            // 2. User is not liking their own post
-            if (response.isLiked() && !user.getId().equals(post.getUser().getId())) {
-                notificationService.createNotification(
-                        post.getUser().getId(),     // recipient (post owner)
-                        user.getId(),               // actor (person who liked)
-                        NotificationType.LIKE,
-                        postId,                     // target (the post)
-                        null                        // no additional message
-                );
-            }
-        } catch (Exception e) {
-            // Log the error but don't fail the like operation
-            System.err.println("Failed to send like notification: " + e.getMessage());
-        }
-
+        // Note: Notification is already handled in PostService.toggleLike()
         return ResponseEntity.ok(response);
     }
-
 
     @GetMapping("/{postId}/like-status")
     public ResponseEntity<Boolean> getLikeStatus(

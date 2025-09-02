@@ -35,6 +35,8 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
 
     Page<Notification> findByRecipientAndTypeInOrderByCreatedAtDesc(User recipient, List<NotificationType> types, Pageable pageable);
 
+    List<Notification> findByTypeOrderByCreatedAtDesc(NotificationType type);
+
     // Priority-based queries
     Page<Notification> findByRecipientAndPriorityOrderByCreatedAtDesc(User recipient, NotificationPriority priority, Pageable pageable);
 
@@ -91,4 +93,19 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
 
     @Query("SELECT DISTINCT n.actor FROM Notification n WHERE n.recipient = :recipient AND n.actor IS NOT NULL")
     List<User> findDistinctActorsByRecipient(@Param("recipient") User recipient);
+
+    // Cleanup duplicate notifications
+    @Modifying
+    @Query("DELETE FROM Notification n WHERE n.id IN (" +
+           "SELECT n2.id FROM Notification n2 WHERE n2.recipient = :recipient " +
+           "AND n2.type = :type AND n2.entityId = :entityId AND n2.entityType = :entityType " +
+           "AND n2.actor = :actor AND n2.id != (" +
+           "SELECT MIN(n3.id) FROM Notification n3 WHERE n3.recipient = :recipient " +
+           "AND n3.type = :type AND n3.entityId = :entityId AND n3.entityType = :entityType " +
+           "AND n3.actor = :actor))")
+    int deleteDuplicateNotifications(@Param("recipient") User recipient, 
+                                   @Param("type") NotificationType type,
+                                   @Param("entityId") Long entityId, 
+                                   @Param("entityType") String entityType,
+                                   @Param("actor") User actor);
 }

@@ -287,19 +287,23 @@ public class NotificationService {
         try {
             User recipient = getUserByEmail(builder.getRecipientEmail());
 
-            // Check for duplicate notifications to avoid spam
-            if (builder.isCheckDuplicates() && isDuplicateNotification(recipient, builder)) {
-                log.debug("Duplicate notification prevented for user {}", recipient.getEmail());
-                return;
+            // ENHANCED: Check for duplicate notifications to avoid spam (with synchronization)
+            synchronized (this) {
+                if (builder.isCheckDuplicates() && isDuplicateNotification(recipient, builder)) {
+                    log.debug("Duplicate notification prevented for user {} - Type: {}, Entity: {}, Actor: {}", 
+                             recipient.getEmail(), builder.getType(), builder.getEntityId(), 
+                             builder.getActor() != null ? builder.getActor().getEmail() : "null");
+                    return;
+                }
+
+                Notification notification = buildNotification(recipient, builder);
+                notification = notificationRepository.save(notification);
+
+                // Send real-time notification via WebSocket
+                sendRealTimeNotification(notification);
+
+                log.info("Notification created: {} for user {}", builder.getType(), recipient.getEmail());
             }
-
-            Notification notification = buildNotification(recipient, builder);
-            notification = notificationRepository.save(notification);
-
-            // Send real-time notification via WebSocket
-            sendRealTimeNotification(notification);
-
-            log.info("Notification created: {} for user {}", builder.getType(), recipient.getEmail());
         } catch (Exception e) {
             log.error("Error creating notification", e);
         }
@@ -456,7 +460,9 @@ public class NotificationService {
     @Async
     public void handleComment(String postOwnerEmail, String commenterEmail, Long postId, Long commentId) {
         if (!postOwnerEmail.equals(commenterEmail)) {
-            createSocialNotification(postOwnerEmail, commenterEmail, NotificationType.COMMENT, commentId, "COMMENT");
+            // For comment notifications, use postId as entityId and "POST" as entityType
+            // This makes more sense semantically and helps with duplicate detection
+            createSocialNotification(postOwnerEmail, commenterEmail, NotificationType.COMMENT, postId, "POST");
         }
     }
 
@@ -664,13 +670,77 @@ public class NotificationService {
             return false;
         }
 
+        // For LIKE notifications, check if the same user already has a like notification for the same entity
+        if (builder.getType() == NotificationType.LIKE) {
+            // Check for any existing like notification from the same actor to the same recipient for the same entity
+            List<Notification> existing = notificationRepository
+                    .findByEntityIdAndEntityTypeAndType(builder.getEntityId(), builder.getEntityType(), builder.getType());
+            
+            boolean hasDuplicate = existing.stream()
+                    .anyMatch(n -> n.getRecipient().equals(recipient) &&
+                            n.getActor() != null &&
+                            n.getActor().equals(builder.getActor()));
+            
+            if (hasDuplicate) {
+                log.warn("DUPLICATE LIKE notification prevented: actor={}, recipient={}, entityId={}, entityType={}", 
+                         builder.getActor() != null ? builder.getActor().getEmail() : "null", 
+                         recipient.getEmail(), builder.getEntityId(), builder.getEntityType());
+                return true;
+            }
+            
+            // Additional check: Look for very recent like notifications (within last 10 seconds) to handle race conditions
+            java.util.Date tenSecondsAgo = new java.util.Date(System.currentTimeMillis() - 10 * 1000);
+            boolean hasRecentDuplicate = existing.stream()
+                    .anyMatch(n -> n.getRecipient().equals(recipient) &&
+                            n.getActor() != null &&
+                            n.getActor().equals(builder.getActor()) &&
+                            n.getCreatedAt().after(tenSecondsAgo));
+            
+            if (hasRecentDuplicate) {
+                log.warn("RECENT DUPLICATE LIKE notification prevented (within 10 seconds): actor={}, recipient={}, entityId={}, entityType={}", 
+                         builder.getActor() != null ? builder.getActor().getEmail() : "null", 
+                         recipient.getEmail(), builder.getEntityId(), builder.getEntityType());
+                return true;
+            }
+        }
+        
+        // For COMMENT notifications, check within the last 5 minutes to prevent spam but allow multiple comments
+        if (builder.getType() == NotificationType.COMMENT) {
+            java.util.Date fiveMinutesAgo = new java.util.Date(System.currentTimeMillis() - 5 * 60 * 1000);
+            
+            List<Notification> recentComments = notificationRepository
+                    .findByEntityIdAndEntityTypeAndType(builder.getEntityId(), builder.getEntityType(), builder.getType())
+                    .stream()
+                    .filter(n -> n.getRecipient().equals(recipient) &&
+                                n.getActor() != null &&
+                                n.getActor().equals(builder.getActor()) &&
+                                n.getCreatedAt().after(fiveMinutesAgo))
+                    .toList();
+            
+            if (!recentComments.isEmpty()) {
+                log.debug("Duplicate COMMENT notification prevented (within 5 minutes): actor={}, recipient={}, entityId={}, entityType={}", 
+                         builder.getActor() != null ? builder.getActor().getEmail() : "null", 
+                         recipient.getEmail(), builder.getEntityId(), builder.getEntityType());
+                return true;
+            }
+        }
+        
+        // For other types (FOLLOW, REPLY, etc.), use the original logic
         List<Notification> existing = notificationRepository
                 .findByEntityIdAndEntityTypeAndType(builder.getEntityId(), builder.getEntityType(), builder.getType());
 
-        return existing.stream()
+        boolean hasDuplicate = existing.stream()
                 .anyMatch(n -> n.getRecipient().equals(recipient) &&
                         n.getActor() != null &&
                         n.getActor().equals(builder.getActor()));
+        
+        if (hasDuplicate) {
+            log.debug("Duplicate {} notification prevented: actor={}, recipient={}, entityId={}, entityType={}", 
+                     builder.getType(), builder.getActor() != null ? builder.getActor().getEmail() : "null", 
+                     recipient.getEmail(), builder.getEntityId(), builder.getEntityType());
+        }
+        
+        return hasDuplicate;
     }
 
     private String serializeMetadata(Map<String, Object> metadata) {
@@ -700,5 +770,72 @@ public class NotificationService {
     @Transactional
     public int cleanupExpiredNotifications() {
         return notificationRepository.deleteExpiredNotifications(new Date());
+    }
+
+    @Transactional
+    public int cleanupDuplicateNotifications() {
+        log.info("Starting cleanup of duplicate notifications");
+        
+        int totalCleaned = 0;
+        
+        try {
+            // Clean up duplicate LIKE notifications
+            totalCleaned += cleanupDuplicateLikeNotifications();
+            
+            log.info("Duplicate notification cleanup completed. Total cleaned: {}", totalCleaned);
+            return totalCleaned;
+            
+        } catch (Exception e) {
+            log.error("Error during duplicate notification cleanup", e);
+            return 0;
+        }
+    }
+    
+    @Transactional
+    public int cleanupDuplicateLikeNotifications() {
+        log.info("Cleaning up duplicate LIKE notifications");
+        
+        try {
+            // Find all like notifications grouped by recipient, actor, entityId, and entityType
+            List<Notification> allLikeNotifications = notificationRepository
+                    .findByTypeOrderByCreatedAtDesc(NotificationType.LIKE);
+            
+            Map<String, List<Notification>> groupedNotifications = allLikeNotifications.stream()
+                    .collect(Collectors.groupingBy(n -> {
+                        return n.getRecipient().getId() + "_" + 
+                               (n.getActor() != null ? n.getActor().getId() : "null") + "_" + 
+                               n.getEntityId() + "_" + 
+                               n.getEntityType();
+                    }));
+            
+            int duplicatesRemoved = 0;
+            
+            for (Map.Entry<String, List<Notification>> entry : groupedNotifications.entrySet()) {
+                List<Notification> duplicates = entry.getValue();
+                
+                if (duplicates.size() > 1) {
+                    // Keep the most recent notification, delete the rest
+                    duplicates.sort((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()));
+                    
+                    for (int i = 1; i < duplicates.size(); i++) {
+                        Notification toDelete = duplicates.get(i);
+                        log.debug("Deleting duplicate LIKE notification: id={}, recipient={}, actor={}, entityId={}", 
+                                 toDelete.getId(), toDelete.getRecipient().getEmail(), 
+                                 toDelete.getActor() != null ? toDelete.getActor().getEmail() : "null",
+                                 toDelete.getEntityId());
+                        
+                        notificationRepository.delete(toDelete);
+                        duplicatesRemoved++;
+                    }
+                }
+            }
+            
+            log.info("Removed {} duplicate LIKE notifications", duplicatesRemoved);
+            return duplicatesRemoved;
+            
+        } catch (Exception e) {
+            log.error("Error cleaning up duplicate LIKE notifications", e);
+            return 0;
+        }
     }
 }

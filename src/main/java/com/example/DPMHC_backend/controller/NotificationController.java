@@ -379,6 +379,32 @@ public class NotificationController {
         }
     }
 
+    // ======================== ADMIN/UTILITY ENDPOINTS ========================
+
+    @PostMapping("/cleanup-duplicates")
+    public ResponseEntity<Map<String, Object>> cleanupDuplicateNotifications(
+            @AuthenticationPrincipal User user) {
+        
+        log.info("Manual duplicate cleanup requested by user: {}", user.getEmail());
+        
+        try {
+            int cleanedCount = notificationService.cleanupDuplicateNotifications();
+            
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "message", "Duplicate notifications cleanup completed",
+                    "cleanedCount", cleanedCount
+            ));
+            
+        } catch (Exception e) {
+            log.error("Failed to cleanup duplicate notifications: {}", e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of(
+                    "success", false,
+                    "message", "Failed to cleanup duplicates: " + e.getMessage()
+            ));
+        }
+    }
+
     // ======================== REQUEST/RESPONSE DTOs ========================
 
     @Data
