@@ -7,7 +7,6 @@ import com.example.DPMHC_backend.service.PostService;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import com.example.DPMHC_backend.service.NotificationService;
-import com.example.DPMHC_backend.model.NotificationType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;

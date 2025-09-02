@@ -108,4 +108,5 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
                                    @Param("entityId") Long entityId, 
                                    @Param("entityType") String entityType,
                                    @Param("actor") User actor);
+
 }
