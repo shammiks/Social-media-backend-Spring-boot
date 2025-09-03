@@ -29,6 +29,7 @@ public class MessageService {
     private final UserRepository userRepository;
     private final PinnedMessageRepository pinnedMessageRepository;
     private final com.example.DPMHC_backend.service.WebSocketService webSocketService;
+    private final UserBlockRepository userBlockRepository;
 
     /**
      * Send a new message
@@ -72,6 +73,20 @@ public class MessageService {
         // Check if user is participant of the chat using existing repository
         if (!chatRepository.isUserParticipantOfChat(request.getChatId(), userId)) {
             throw new RuntimeException("User is not a participant of this chat");
+        }
+
+        // Check for blocked users - prevent messaging between blocked users
+        if (chat.getChatType() == Chat.ChatType.PRIVATE) {
+            // For private chats, check if any participants have blocked each other
+            List<ChatParticipant> participants = chat.getParticipants();
+            for (ChatParticipant participant : participants) {
+                if (!participant.getUser().getId().equals(userId)) {
+                    // Check if sender is blocked by the other participant or vice versa
+                    if (userBlockRepository.areUsersBlocked(userId, participant.getUser().getId())) {
+                        throw new RuntimeException("Cannot send message: Users are blocked");
+                    }
+                }
+            }
         }
 
         // Handle reply validation

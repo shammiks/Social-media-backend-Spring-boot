@@ -2,7 +2,9 @@ package com.example.DPMHC_backend.controller;
 
 
 import com.example.DPMHC_backend.dto.*;
+import com.example.DPMHC_backend.dto.AddParticipantsRequestDTO;
 import com.example.DPMHC_backend.service.ChatService;
+import com.example.DPMHC_backend.service.UserBlockService;
 import com.example.DPMHC_backend.security.JwtAuthenticationFilter;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +28,7 @@ import java.util.Map;
 public class ChatController {
 
     private final ChatService chatService;
+    private final UserBlockService userBlockService;
 
     /**
      * Create a new chat
@@ -199,6 +202,91 @@ public class ChatController {
         List<ChatParticipantDTO> participants = chatService.getChatParticipants(chatId, userId);
 
         return ResponseEntity.ok(participants);
+    }
+
+    /**
+     * Block a user from the chat context
+     */
+    @PostMapping("/{chatId}/block/{userId}")
+    public ResponseEntity<Map<String, String>> blockUserInChat(
+            @PathVariable Long chatId,
+            @PathVariable Long userId,
+            Authentication authentication) {
+
+        Long blockerId = getUserIdFromAuth(authentication);
+        
+        // Verify the chat exists and users are participants
+        ChatDTO chat = chatService.getChatById(chatId, blockerId);
+        if (chat.getChatType() != com.example.DPMHC_backend.model.Chat.ChatType.PRIVATE) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "Can only block users in private chats"));
+        }
+
+        try {
+            UserBlockDTO block = userBlockService.blockUser(blockerId, userId);
+            return ResponseEntity.ok(Map.of(
+                    "message", "User blocked successfully",
+                    "blockedAt", block.getBlockedAt().toString()
+            ));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * Unblock a user from the chat context
+     */
+    @DeleteMapping("/{chatId}/block/{userId}")
+    public ResponseEntity<Map<String, String>> unblockUserInChat(
+            @PathVariable Long chatId,
+            @PathVariable Long userId,
+            Authentication authentication) {
+
+        Long blockerId = getUserIdFromAuth(authentication);
+        
+        try {
+            userBlockService.unblockUser(blockerId, userId);
+            return ResponseEntity.ok(Map.of("message", "User unblocked successfully"));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * Check if a user is blocked in chat context
+     */
+    @GetMapping("/{chatId}/block-status/{userId}")
+    public ResponseEntity<Map<String, Object>> getBlockStatus(
+            @PathVariable Long chatId,
+            @PathVariable Long userId,
+            Authentication authentication) {
+
+        Long currentUserId = getUserIdFromAuth(authentication);
+        
+        boolean currentUserBlockedOther = userBlockService.isSpecificUserBlocked(currentUserId, userId);
+        boolean otherUserBlockedCurrent = userBlockService.isSpecificUserBlocked(userId, currentUserId);
+        boolean areBlocked = userBlockService.areUsersBlocked(currentUserId, userId);
+        
+        // Determine block status and who initiated it
+        String blockStatus = "none";
+        if (currentUserBlockedOther && otherUserBlockedCurrent) {
+            blockStatus = "mutual";
+        } else if (currentUserBlockedOther) {
+            blockStatus = "i_blocked_them";
+        } else if (otherUserBlockedCurrent) {
+            blockStatus = "they_blocked_me";
+        }
+        
+        return ResponseEntity.ok(Map.of(
+                "isBlocked", currentUserBlockedOther,
+                "areBlocked", areBlocked,
+                "canSendMessage", !areBlocked,
+                "blockStatus", blockStatus,
+                "iBlockedThem", currentUserBlockedOther,
+                "theyBlockedMe", otherUserBlockedCurrent
+        ));
     }
 
     // Error handling

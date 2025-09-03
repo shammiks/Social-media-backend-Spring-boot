@@ -7,6 +7,7 @@ import com.example.DPMHC_backend.model.User;
 import com.example.DPMHC_backend.repository.PasswordResetTokenRepository;
 import com.example.DPMHC_backend.repository.PostRepository;
 import com.example.DPMHC_backend.repository.UserRepository;
+import com.example.DPMHC_backend.repository.UserBlockRepository;
 import com.example.DPMHC_backend.security.JwtService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -43,6 +44,7 @@ public class UserService {
     private final PasswordResetTokenRepository resetTokenRepository;
     private final PostRepository postRepository;
     private final PostService postService; // Add this dependency
+    private final UserBlockRepository userBlockRepository;
 
     @Value("${app.base.url}")
     private String baseUrl;
@@ -245,5 +247,45 @@ public class UserService {
                 .bio(user.getBio())
                 .isAdmin(user.isAdmin())
                 .build();
+    }
+
+    /**
+     * Create UserDTO with blocking context - hides profile picture if users are blocked
+     */
+    public UserDTO createUserDTOWithBlockingContext(User user, Long currentUserId) {
+        if (user == null) {
+            return null;
+        }
+
+        UserDTO userDTO = mapToDTO(user);
+
+        // If there's a current user and they're blocked from each other, hide profile info
+        if (currentUserId != null && !currentUserId.equals(user.getId())) {
+            boolean areBlocked = userBlockRepository.areUsersBlocked(currentUserId, user.getId());
+            if (areBlocked) {
+                // Hide profile picture and other sensitive info for blocked users
+                userDTO.setProfileImageUrl(null);
+                userDTO.setAvatar(null);
+                userDTO.setBio(null);
+                userDTO.setEmail(null);
+            }
+        }
+
+        return userDTO;
+    }
+
+    /**
+     * Get user by ID with blocking context
+     */
+    public User getUserById(Long userId) {
+        return userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+    }
+
+    /**
+     * Check if user exists
+     */
+    public boolean userExists(Long userId) {
+        return userRepository.existsById(userId);
     }
 }
