@@ -102,28 +102,40 @@ public class AuthController {
     public ResponseEntity<?> refreshToken(@RequestBody TokenRefreshRequest request) {
         try {
             String requestRefreshToken = request.getRefreshToken();
+            System.out.println("🔄 Refresh token request received for token: " + 
+                (requestRefreshToken != null ? requestRefreshToken.substring(0, Math.min(10, requestRefreshToken.length())) + "..." : "null"));
             
             RefreshToken refreshToken = refreshTokenService.findByToken(requestRefreshToken)
                     .orElseThrow(() -> new RuntimeException("Refresh token is not in database!"));
             
+            System.out.println("✅ Found refresh token in database, verifying expiration...");
             refreshToken = refreshTokenService.verifyExpiration(refreshToken);
             User user = refreshToken.getUser();
+            
+            System.out.println("✅ Refresh token verified for user: " + user.getEmail());
             
             // Generate new access token and refresh token
             String newAccessToken = userService.generateNewAccessToken(requestRefreshToken);
             RefreshToken newRefreshToken = refreshTokenService.createRefreshToken(user);
             
+            System.out.println("✅ Generated new tokens successfully");
+            
             // Revoke the old refresh token
             refreshTokenService.revokeToken(requestRefreshToken);
+            
+            System.out.println("✅ Revoked old refresh token");
             
             TokenRefreshResponse response = new TokenRefreshResponse(
                     newAccessToken, 
                     newRefreshToken.getToken(),
-                    86400 // 24 hours in seconds
+                    300 // 5 minutes in seconds (matching JWT expiration)
             );
             
+            System.out.println("✅ Refresh token response prepared successfully");
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            System.err.println("❌ Refresh token failed: " + e.getMessage());
+            e.printStackTrace();
             return ResponseEntity.badRequest()
                     .body(Map.of("message", "Refresh token failed: " + e.getMessage()));
         }
