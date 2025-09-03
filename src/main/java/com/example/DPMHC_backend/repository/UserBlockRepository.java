@@ -17,6 +17,10 @@ public interface UserBlockRepository extends JpaRepository<UserBlock, Long> {
     @Query("SELECT ub FROM UserBlock ub WHERE ub.blocker.id = :blockerId AND ub.blocked.id = :blockedId AND ub.isActive = true")
     Optional<UserBlock> findActiveBlock(@Param("blockerId") Long blockerId, @Param("blockedId") Long blockedId);
 
+    // Find any block record between two users (active or inactive)
+    @Query("SELECT ub FROM UserBlock ub WHERE ub.blocker.id = :blockerId AND ub.blocked.id = :blockedId")
+    Optional<UserBlock> findByBlockerIdAndBlockedId(@Param("blockerId") Long blockerId, @Param("blockedId") Long blockedId);
+
     // Check if user A has blocked user B
     @Query("SELECT COUNT(ub) > 0 FROM UserBlock ub WHERE ub.blocker.id = :blockerId AND ub.blocked.id = :blockedId AND ub.isActive = true")
     boolean isUserBlocked(@Param("blockerId") Long blockerId, @Param("blockedId") Long blockedId);

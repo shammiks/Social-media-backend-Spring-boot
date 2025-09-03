@@ -10,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -42,18 +43,31 @@ public class UserBlockService {
         User blocked = userRepository.findById(blockedUserId)
                 .orElseThrow(() -> new RuntimeException("User to block not found"));
 
-        // Check if already blocked
-        Optional<UserBlock> existingBlock = userBlockRepository.findActiveBlock(blockerId, blockedUserId);
-        if (existingBlock.isPresent()) {
+        // Check if already actively blocked
+        Optional<UserBlock> existingActiveBlock = userBlockRepository.findActiveBlock(blockerId, blockedUserId);
+        if (existingActiveBlock.isPresent()) {
             throw new RuntimeException("User is already blocked");
         }
 
-        // Create new block
-        UserBlock userBlock = UserBlock.builder()
-                .blocker(blocker)
-                .blocked(blocked)
-                .isActive(true)
-                .build();
+        // Check if there's an inactive block record (previously unblocked)
+        Optional<UserBlock> existingInactiveBlock = userBlockRepository.findByBlockerIdAndBlockedId(blockerId, blockedUserId);
+        
+        UserBlock userBlock;
+        if (existingInactiveBlock.isPresent()) {
+            // Reactivate existing block
+            userBlock = existingInactiveBlock.get();
+            userBlock.setIsActive(true);
+            userBlock.setBlockedAt(LocalDateTime.now()); // Update the blocked time
+            log.info("Reactivating existing block record for user {} blocking user {}", blockerId, blockedUserId);
+        } else {
+            // Create new block
+            userBlock = UserBlock.builder()
+                    .blocker(blocker)
+                    .blocked(blocked)
+                    .isActive(true)
+                    .build();
+            log.info("Creating new block record for user {} blocking user {}", blockerId, blockedUserId);
+        }
 
         UserBlock savedBlock = userBlockRepository.save(userBlock);
         
