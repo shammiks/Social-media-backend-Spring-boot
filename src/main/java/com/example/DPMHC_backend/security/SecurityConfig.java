@@ -43,6 +43,7 @@ public class SecurityConfig {
                     auth
                             // Public endpoints - no authentication required
                             .requestMatchers(
+                                    "/favicon.ico",
                                     "/api/auth/register",
                                     "/api/auth/login",
                                     "/api/auth/verify",

@@ -30,15 +30,23 @@ public class WebSocketController {
             @Payload Map<String, Object> payload,
             Principal principal) {
 
+        log.info("=== WEBSOCKET TYPING MESSAGE RECEIVED ===");
+        log.info("Chat ID: {}", chatId);
+        log.info("Payload: {}", payload);
+        log.info("Principal: {}", principal);
+
         try {
             Long userId = getUserIdFromPrincipal(principal);
             Boolean isTyping = (Boolean) payload.get("isTyping");
+
+            log.info("User ID: {}, Is Typing: {}", userId, isTyping);
 
             if (isTyping == null) {
                 isTyping = true;
             }
 
             webSocketService.broadcastTypingIndicator(chatId, userId, isTyping);
+            log.info("Successfully broadcasted typing indicator");
 
         } catch (Exception e) {
             log.error("Error handling typing indicator", e);
@@ -53,9 +61,13 @@ public class WebSocketController {
             @DestinationVariable Long chatId,
             Principal principal) {
 
+        log.info("=== WEBSOCKET JOIN MESSAGE RECEIVED ===");
+        log.info("Chat ID: {}", chatId);
+        log.info("Principal: {}", principal);
+
         try {
             Long userId = getUserIdFromPrincipal(principal);
-            log.debug("User {} joined chat {}", userId, chatId);
+            log.info("User {} joined chat {}", userId, chatId);
 
             // Could implement additional logic here like updating last seen, etc.
 
@@ -72,9 +84,13 @@ public class WebSocketController {
             @DestinationVariable Long chatId,
             Principal principal) {
 
+        log.info("=== WEBSOCKET LEAVE MESSAGE RECEIVED ===");
+        log.info("Chat ID: {}", chatId);
+        log.info("Principal: {}", principal);
+
         try {
             Long userId = getUserIdFromPrincipal(principal);
-            log.debug("User {} left chat {}", userId, chatId);
+            log.info("User {} left chat {}", userId, chatId);
 
             // Stop typing indicator when leaving
             webSocketService.broadcastTypingIndicator(chatId, userId, false);

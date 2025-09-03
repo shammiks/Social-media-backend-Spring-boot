@@ -4,7 +4,6 @@ import com.example.DPMHC_backend.dto.ChatDTO;
 import com.example.DPMHC_backend.dto.MessageDTO;
 import com.example.DPMHC_backend.model.ChatParticipant;
 import com.example.DPMHC_backend.repository.ChatParticipantRepository;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -74,32 +73,40 @@ public class WebSocketService {
      */
     public void broadcastNewMessage(MessageDTO message) {
         try {
+            log.info("=== BROADCASTING NEW MESSAGE ===");
+            log.info("Message ID: {}, Chat ID: {}", message.getId(), message.getChatId());
+            
             // Get all participants of the chat
             List<ChatParticipant> participants = participantRepository
                     .findByChatIdAndActive(message.getChatId());
 
-            String messageJson = objectMapper.writeValueAsString(Map.of(
+            log.info("Found {} participants for chat {}", participants.size(), message.getChatId());
+
+            Map<String, Object> messageData = Map.of(
                     "type", "NEW_MESSAGE",
                     "data", message,
                     "timestamp", LocalDateTime.now()
-            ));
+            );
 
-            // Send to each participant
+            // Send to each participant (including the sender for real-time updates)
             for (ChatParticipant participant : participants) {
                 Long userId = participant.getUser().getId();
                 if (isUserOnline(userId)) {
+                    log.info("Sending message {} to online user {}", message.getId(), userId);
                     messagingTemplate.convertAndSendToUser(
                             userId.toString(),
                             "/queue/messages",
-                            messageJson
+                            messageData
                     );
+                } else {
+                    log.info("User {} is offline, not sending message {}", userId, message.getId());
                 }
             }
 
-            log.debug("Broadcasted message {} to {} participants",
+            log.info("Completed broadcasting message {} to {} participants",
                     message.getId(), participants.size());
 
-        } catch (JsonProcessingException e) {
+        } catch (Exception e) {
             log.error("Error broadcasting message", e);
         }
     }
@@ -112,11 +119,11 @@ public class WebSocketService {
             List<ChatParticipant> participants = participantRepository
                     .findByChatIdAndActive(message.getChatId());
 
-            String messageJson = objectMapper.writeValueAsString(Map.of(
+            Map<String, Object> messageData = Map.of(
                     "type", "MESSAGE_UPDATED",
                     "data", message,
                     "timestamp", LocalDateTime.now()
-            ));
+            );
 
             for (ChatParticipant participant : participants) {
                 Long userId = participant.getUser().getId();
@@ -124,12 +131,12 @@ public class WebSocketService {
                     messagingTemplate.convertAndSendToUser(
                             userId.toString(),
                             "/queue/messages",
-                            messageJson
+                            messageData
                     );
                 }
             }
 
-        } catch (JsonProcessingException e) {
+        } catch (Exception e) {
             log.error("Error broadcasting message update", e);
         }
     }
@@ -142,14 +149,14 @@ public class WebSocketService {
             List<ChatParticipant> participants = participantRepository
                     .findByChatIdAndActive(chatId);
 
-            String messageJson = objectMapper.writeValueAsString(Map.of(
+            Map<String, Object> messageData = Map.of(
                     "type", "MESSAGE_DELETED",
                     "data", Map.of(
                             "messageId", messageId,
                             "chatId", chatId
                     ),
                     "timestamp", LocalDateTime.now()
-            ));
+            );
 
             for (ChatParticipant participant : participants) {
                 Long userId = participant.getUser().getId();
@@ -157,12 +164,12 @@ public class WebSocketService {
                     messagingTemplate.convertAndSendToUser(
                             userId.toString(),
                             "/queue/messages",
-                            messageJson
+                            messageData
                     );
                 }
             }
 
-        } catch (JsonProcessingException e) {
+        } catch (Exception e) {
             log.error("Error broadcasting message deletion", e);
         }
     }
@@ -175,11 +182,11 @@ public class WebSocketService {
             List<ChatParticipant> participants = participantRepository
                     .findByChatIdAndActive(message.getChatId());
 
-            String messageJson = objectMapper.writeValueAsString(Map.of(
+            Map<String, Object> messageData = Map.of(
                     "type", "REACTION_UPDATED",
                     "data", message,
                     "timestamp", LocalDateTime.now()
-            ));
+            );
 
             for (ChatParticipant participant : participants) {
                 Long userId = participant.getUser().getId();
@@ -187,12 +194,12 @@ public class WebSocketService {
                     messagingTemplate.convertAndSendToUser(
                             userId.toString(),
                             "/queue/reactions",
-                            messageJson
+                            messageData
                     );
                 }
             }
 
-        } catch (JsonProcessingException e) {
+        } catch (Exception e) {
             log.error("Error broadcasting reaction update", e);
         }
     }
@@ -227,7 +234,7 @@ public class WebSocketService {
                 }
             }
 
-        } catch (JsonProcessingException e) {
+        } catch (Exception e) {
             log.error("Error broadcasting typing indicator", e);
         }
     }
@@ -261,7 +268,7 @@ public class WebSocketService {
                 }
             }
 
-        } catch (JsonProcessingException e) {
+        } catch (Exception e) {
             log.error("Error broadcasting read status update", e);
         }
     }
@@ -294,7 +301,7 @@ public class WebSocketService {
                 }
             }
 
-        } catch (JsonProcessingException e) {
+        } catch (Exception e) {
             log.error("Error broadcasting chat read update", e);
         }
     }
@@ -324,7 +331,7 @@ public class WebSocketService {
                 }
             }
 
-        } catch (JsonProcessingException e) {
+        } catch (Exception e) {
             log.error("Error notifying new chat", e);
         }
     }
@@ -353,7 +360,7 @@ public class WebSocketService {
                 }
             }
 
-        } catch (JsonProcessingException e) {
+        } catch (Exception e) {
             log.error("Error notifying chat update", e);
         }
     }
@@ -383,7 +390,7 @@ public class WebSocketService {
                 }
             }
 
-        } catch (JsonProcessingException e) {
+        } catch (Exception e) {
             log.error("Error notifying chat deletion", e);
         }
     }
@@ -416,7 +423,7 @@ public class WebSocketService {
                 }
             }
 
-        } catch (JsonProcessingException e) {
+        } catch (Exception e) {
             log.error("Error notifying participant left", e);
         }
     }
@@ -455,7 +462,7 @@ public class WebSocketService {
                 }
             }
 
-        } catch (JsonProcessingException e) {
+        } catch (Exception e) {
             log.error("Error notifying user status change", e);
         }
     }
@@ -478,7 +485,7 @@ public class WebSocketService {
                         messageJson
                 );
             }
-        } catch (JsonProcessingException e) {
+        } catch (Exception e) {
             log.error("Error sending private notification", e);
         }
     }

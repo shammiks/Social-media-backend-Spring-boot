@@ -36,6 +36,12 @@ public class MessageController {
             @RequestBody String rawBody,
             Authentication authentication) {
 
+        log.info("=== MESSAGE SEND ENDPOINT HIT ===");
+        log.info("Authentication: {}", authentication);
+        log.info("User Principal: {}", authentication != null ? authentication.getPrincipal() : "NULL");
+        log.info("Request URL: {}", httpRequest.getRequestURL());
+        log.info("Request Method: {}", httpRequest.getMethod());
+        
         // Debug the raw request
         log.info("DEBUG: Content-Type: {}", httpRequest.getContentType());
         log.info("DEBUG: Raw request body: {}", rawBody);

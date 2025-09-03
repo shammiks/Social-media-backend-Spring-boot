@@ -24,8 +24,14 @@ public class WebSocketEventListener {
 
         Authentication auth = (Authentication) headerAccessor.getUser();
         if (auth != null) {
-            Long userId = Long.valueOf(auth.getName());
-            log.info("WebSocket session connected: {} for user: {}", sessionId, userId);
+            Object principal = auth.getPrincipal();
+            if (principal instanceof com.example.DPMHC_backend.model.User) {
+                com.example.DPMHC_backend.model.User user = (com.example.DPMHC_backend.model.User) principal;
+                Long userId = user.getId();
+                log.info("WebSocket session connected: {} for user: {}", sessionId, userId);
+            } else {
+                log.warn("WebSocket session connected with unknown principal type: {}", principal.getClass());
+            }
         } else {
             log.warn("WebSocket session connected without authentication: {}", sessionId);
         }
