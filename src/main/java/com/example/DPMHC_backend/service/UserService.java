@@ -1,6 +1,8 @@
 package com.example.DPMHC_backend.service;
+import com.example.DPMHC_backend.dto.LoginResponse;
 import com.example.DPMHC_backend.dto.PostDTO;
 import com.example.DPMHC_backend.model.PasswordResetToken;
+import com.example.DPMHC_backend.model.RefreshToken;
 import com.example.DPMHC_backend.model.Role;
 import com.example.DPMHC_backend.dto.UserDTO;
 import com.example.DPMHC_backend.model.User;
@@ -45,6 +47,7 @@ public class UserService {
     private final PostRepository postRepository;
     private final PostService postService; // Add this dependency
     private final UserBlockRepository userBlockRepository;
+    private final RefreshTokenService refreshTokenService;
 
     @Value("${app.base.url}")
     private String baseUrl;
@@ -148,6 +151,41 @@ public class UserService {
         }
 
         return jwtService.generateToken(user);
+    }
+
+    /**
+     * Login with refresh token support
+     */
+    public LoginResponse loginWithRefreshToken(String email, String password) {
+        Optional<User> optionalUser = userRepository.findByEmail(email);
+        if (optionalUser.isEmpty()) {
+            throw new RuntimeException("User not found");
+        }
+
+        User user = optionalUser.get();
+
+        if (user.isBanned()) {
+            throw new RuntimeException("This user is banned.");
+        }
+
+        if (!user.isEmailVerified()) {
+            throw new RuntimeException("Email is not verified");
+        }
+
+        if (!passwordEncoder.matches(password, user.getPassword())) {
+            throw new RuntimeException("Invalid credentials");
+        }
+
+        // Generate access token
+        String accessToken = jwtService.generateToken(user);
+        
+        // Create refresh token
+        RefreshToken refreshToken = refreshTokenService.createRefreshToken(user);
+        
+        // JWT expiration time in seconds (5 minutes)
+        Long expiresIn = 300L;
+        
+        return new LoginResponse(accessToken, refreshToken.getToken(), expiresIn);
     }
 
 
@@ -287,5 +325,16 @@ public class UserService {
      */
     public boolean userExists(Long userId) {
         return userRepository.existsById(userId);
+    }
+
+    /**
+     * Generate new access token from refresh token
+     */
+    public String generateNewAccessToken(String refreshToken) {
+        RefreshToken storedRefreshToken = refreshTokenService.findByToken(refreshToken)
+                .orElseThrow(() -> new RuntimeException("Refresh token not found"));
+        RefreshToken verifiedToken = refreshTokenService.verifyExpiration(storedRefreshToken);
+        User user = verifiedToken.getUser();
+        return jwtService.generateToken(user);
     }
 }

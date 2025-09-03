@@ -19,6 +19,9 @@ public class JwtService {
     @Value("${app.jwt.expiration}")
     private long jwtExpiration;
 
+    @Value("${app.jwt.refresh-expiration:604800000}") // 7 days for refresh token validation
+    private long refreshExpiration;
+
     private Key key;
 
     @PostConstruct
@@ -29,9 +32,21 @@ public class JwtService {
     public String generateToken(User user) {
         return Jwts.builder()
                 .setSubject(user.getEmail())
-                .claim("role", user.getRole().name()) // 👈 Add role as claim
+                .claim("role", user.getRole().name())
+                .claim("userId", user.getId())
                 .setIssuedAt(new Date())
                 .setExpiration(new Date(System.currentTimeMillis() + jwtExpiration))
+                .signWith(key, SignatureAlgorithm.HS256)
+                .compact();
+    }
+
+    public String generateRefreshToken(User user) {
+        return Jwts.builder()
+                .setSubject(user.getEmail())
+                .claim("userId", user.getId())
+                .claim("type", "refresh")
+                .setIssuedAt(new Date())
+                .setExpiration(new Date(System.currentTimeMillis() + refreshExpiration))
                 .signWith(key, SignatureAlgorithm.HS256)
                 .compact();
     }
@@ -46,6 +61,16 @@ public class JwtService {
                 .parseClaimsJws(token).getBody().get("role", String.class);
     }
 
+    public Long extractUserId(String token) {
+        return Jwts.parserBuilder().setSigningKey(key).build()
+                .parseClaimsJws(token).getBody().get("userId", Long.class);
+    }
+
+    public String extractTokenType(String token) {
+        return Jwts.parserBuilder().setSigningKey(key).build()
+                .parseClaimsJws(token).getBody().get("type", String.class);
+    }
+
     public boolean isTokenValid(String token, User user) {
         final String email = extractEmail(token);
         return (email.equals(user.getEmail()) && !isTokenExpired(token));
@@ -54,5 +79,19 @@ public class JwtService {
     public boolean isTokenExpired(String token) {
         return Jwts.parserBuilder().setSigningKey(key).build()
                 .parseClaimsJws(token).getBody().getExpiration().before(new Date());
+    }
+
+    public Date extractExpiration(String token) {
+        return Jwts.parserBuilder().setSigningKey(key).build()
+                .parseClaimsJws(token).getBody().getExpiration();
+    }
+
+    public boolean isRefreshToken(String token) {
+        try {
+            String tokenType = extractTokenType(token);
+            return "refresh".equals(tokenType);
+        } catch (Exception e) {
+            return false;
+        }
     }
 }

@@ -2,8 +2,13 @@
 
 package com.example.DPMHC_backend.controller;
 
+import com.example.DPMHC_backend.dto.LoginResponse;
+import com.example.DPMHC_backend.dto.TokenRefreshRequest;
+import com.example.DPMHC_backend.dto.TokenRefreshResponse;
+import com.example.DPMHC_backend.model.RefreshToken;
 import com.example.DPMHC_backend.model.User;
 import com.example.DPMHC_backend.repository.UserRepository;
+import com.example.DPMHC_backend.service.RefreshTokenService;
 import com.example.DPMHC_backend.service.UserService;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -26,6 +31,7 @@ public class AuthController {
 
     private final UserService userService;
     private final UserRepository userRepository;
+    private final RefreshTokenService refreshTokenService;
 
     @PostMapping("/register")
     public ResponseEntity<?> register(@RequestBody User user) {
@@ -44,9 +50,21 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody LoginRequest loginRequest) {
         try {
-            String token = userService.login(loginRequest.getEmail(), loginRequest.getPassword());
-            UserDTO userDTO = userService.getUserByEmail(loginRequest.getEmail()); // Already returns DTO
-            return ResponseEntity.ok(new AuthResponseWithUser(token, userDTO));
+            LoginResponse loginResponse = userService.loginWithRefreshToken(
+                loginRequest.getEmail(), 
+                loginRequest.getPassword()
+            );
+            UserDTO userDTO = userService.getUserByEmail(loginRequest.getEmail());
+            
+            AuthResponseWithTokens response = new AuthResponseWithTokens(
+                loginResponse.getAccessToken(),
+                loginResponse.getRefreshToken(),
+                loginResponse.getExpiresIn(),
+                loginResponse.getTokenType(),
+                userDTO
+            );
+            
+            return ResponseEntity.ok(response);
         } catch (RuntimeException e) {
             return ResponseEntity
                     .badRequest()
@@ -78,6 +96,61 @@ public class AuthController {
     public ResponseEntity<?> resetPassword(@RequestBody ResetPasswordRequest request) {
         userService.resetPassword(request.getToken(), request.getNewPassword());
         return ResponseEntity.ok("Password has been reset successfully.");
+    }
+
+    @PostMapping("/refresh-token")
+    public ResponseEntity<?> refreshToken(@RequestBody TokenRefreshRequest request) {
+        try {
+            String requestRefreshToken = request.getRefreshToken();
+            
+            RefreshToken refreshToken = refreshTokenService.findByToken(requestRefreshToken)
+                    .orElseThrow(() -> new RuntimeException("Refresh token is not in database!"));
+            
+            refreshToken = refreshTokenService.verifyExpiration(refreshToken);
+            User user = refreshToken.getUser();
+            
+            // Generate new access token and refresh token
+            String newAccessToken = userService.generateNewAccessToken(requestRefreshToken);
+            RefreshToken newRefreshToken = refreshTokenService.createRefreshToken(user);
+            
+            // Revoke the old refresh token
+            refreshTokenService.revokeToken(requestRefreshToken);
+            
+            TokenRefreshResponse response = new TokenRefreshResponse(
+                    newAccessToken, 
+                    newRefreshToken.getToken(),
+                    86400 // 24 hours in seconds
+            );
+            
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("message", "Refresh token failed: " + e.getMessage()));
+        }
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<?> logout(@RequestBody Map<String, String> request, Authentication authentication) {
+        try {
+            String refreshToken = request.get("refreshToken");
+            
+            if (refreshToken != null) {
+                refreshTokenService.revokeToken(refreshToken);
+            }
+            
+            // If user wants to logout from all devices
+            if (authentication != null && authentication.getPrincipal() instanceof User) {
+                User user = (User) authentication.getPrincipal();
+                if ("true".equals(request.get("logoutFromAllDevices"))) {
+                    refreshTokenService.revokeAllTokensForUser(user);
+                }
+            }
+            
+            return ResponseEntity.ok(Map.of("message", "Logged out successfully"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("message", "Logout failed: " + e.getMessage()));
+        }
     }
 
     @PutMapping("/me/avatar")
@@ -187,6 +260,16 @@ public class AuthController {
     @AllArgsConstructor
     static class AuthResponseWithUser {
         private String token;
+        private UserDTO user;
+    }
+    
+    @Data
+    @AllArgsConstructor
+    static class AuthResponseWithTokens {
+        private String accessToken;
+        private String refreshToken;
+        private Long expiresIn;
+        private String tokenType;
         private UserDTO user;
     }
     @Data
