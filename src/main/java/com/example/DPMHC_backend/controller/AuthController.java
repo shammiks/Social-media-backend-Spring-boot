@@ -7,6 +7,7 @@ import com.example.DPMHC_backend.dto.TokenRefreshRequest;
 import com.example.DPMHC_backend.dto.TokenRefreshResponse;
 import com.example.DPMHC_backend.model.RefreshToken;
 import com.example.DPMHC_backend.model.User;
+import com.example.DPMHC_backend.repository.RefreshTokenRepository;
 import com.example.DPMHC_backend.repository.UserRepository;
 import com.example.DPMHC_backend.service.RefreshTokenService;
 import com.example.DPMHC_backend.service.UserService;
@@ -23,6 +24,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.security.Principal;
 import java.util.Map;
+import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -32,6 +34,7 @@ public class AuthController {
     private final UserService userService;
     private final UserRepository userRepository;
     private final RefreshTokenService refreshTokenService;
+    private final RefreshTokenRepository refreshTokenRepository;
 
     @PostMapping("/register")
     public ResponseEntity<?> register(@RequestBody User user) {
@@ -105,8 +108,31 @@ public class AuthController {
             System.out.println("🔄 Refresh token request received for token: " + 
                 (requestRefreshToken != null ? requestRefreshToken.substring(0, Math.min(10, requestRefreshToken.length())) + "..." : "null"));
             
+            // First check if token exists at all (including revoked ones)
+            Optional<RefreshToken> anyToken = refreshTokenRepository.findByToken(requestRefreshToken);
+            if (anyToken.isEmpty()) {
+                System.err.println("❌ Refresh token not found in database (may have been cleaned up): " + 
+                    (requestRefreshToken != null ? requestRefreshToken.substring(0, Math.min(10, requestRefreshToken.length())) + "..." : "null"));
+                throw new RuntimeException("Refresh token not found. Please login again.");
+            }
+            
+            RefreshToken existingToken = anyToken.get();
+            if (existingToken.isRevoked()) {
+                System.err.println("❌ Refresh token has been revoked: " + 
+                    (requestRefreshToken != null ? requestRefreshToken.substring(0, Math.min(10, requestRefreshToken.length())) + "..." : "null"));
+                throw new RuntimeException("Refresh token is revoked. Please login again.");
+            }
+            
+            if (existingToken.isExpired()) {
+                System.err.println("❌ Refresh token has expired: " + 
+                    (requestRefreshToken != null ? requestRefreshToken.substring(0, Math.min(10, requestRefreshToken.length())) + "..." : "null"));
+                // Delete expired token
+                refreshTokenRepository.delete(existingToken);
+                throw new RuntimeException("Refresh token has expired. Please login again.");
+            }
+            
             RefreshToken refreshToken = refreshTokenService.findByToken(requestRefreshToken)
-                    .orElseThrow(() -> new RuntimeException("Refresh token is not in database!"));
+                    .orElseThrow(() -> new RuntimeException("Refresh token is not valid!"));
             
             System.out.println("✅ Found refresh token in database, verifying expiration...");
             refreshToken = refreshTokenService.verifyExpiration(refreshToken);
@@ -114,13 +140,19 @@ public class AuthController {
             
             System.out.println("✅ Refresh token verified for user: " + user.getEmail());
             
+            // Check if token is already revoked (race condition protection)
+            if (existingToken.isRevoked()) {
+                System.out.println("❌ Refresh token was revoked during concurrent request: " + requestRefreshToken.substring(0, 10) + "...");
+                throw new RuntimeException("Refresh token is revoked. Please login again.");
+            }
+            
             // Generate new access token and refresh token
             String newAccessToken = userService.generateNewAccessToken(requestRefreshToken);
             RefreshToken newRefreshToken = refreshTokenService.createRefreshToken(user);
             
             System.out.println("✅ Generated new tokens successfully");
             
-            // Revoke the old refresh token
+            // Revoke the old refresh token AFTER successful generation
             refreshTokenService.revokeToken(requestRefreshToken);
             
             System.out.println("✅ Revoked old refresh token");

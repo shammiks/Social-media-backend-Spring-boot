@@ -19,7 +19,7 @@ public class JwtService {
     @Value("${app.jwt.expiration}")
     private long jwtExpiration;
 
-    @Value("${app.jwt.refresh-expiration:604800000}") // 7 days for refresh token validation
+    @Value("${app.jwt.refresh-expiration:2592000000}") // 30 days for refresh token validation (matching RefreshTokenService)
     private long refreshExpiration;
 
     private Key key;

@@ -1,9 +1,8 @@
-// Enhanced NotificationService.java - Fixed state persistence issues
-
 package com.example.DPMHC_backend.service;
 
 import com.example.DPMHC_backend.dto.NotificationDTO;
 import com.example.DPMHC_backend.model.*;
+import com.example.DPMHC_backend.repository.CommentRepository;
 import com.example.DPMHC_backend.repository.NotificationRepository;
 import com.example.DPMHC_backend.repository.UserRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -30,8 +29,9 @@ public class NotificationService {
 
     private final NotificationRepository notificationRepository;
     private final UserRepository userRepository;
+    private final CommentRepository commentRepository;
     private final SimpMessagingTemplate messagingTemplate;
-    private final ObjectMapper objectMapper;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     // ======================== ENHANCED NOTIFICATION STATE MANAGEMENT ========================
 
@@ -287,22 +287,27 @@ public class NotificationService {
         try {
             User recipient = getUserByEmail(builder.getRecipientEmail());
 
-            // ENHANCED: Check for duplicate notifications to avoid spam (with synchronization)
+            // ENHANCED: Use database-level duplicate checking with proper synchronization
             synchronized (this) {
-                if (builder.isCheckDuplicates() && isDuplicateNotification(recipient, builder)) {
-                    log.debug("Duplicate notification prevented for user {} - Type: {}, Entity: {}, Actor: {}", 
-                             recipient.getEmail(), builder.getType(), builder.getEntityId(), 
-                             builder.getActor() != null ? builder.getActor().getEmail() : "null");
-                    return;
+                try {
+                    // ENHANCED: Use database-level duplicate checking with proper locking
+                    if (builder.isCheckDuplicates() && isDuplicateNotification(recipient, builder)) {
+                        log.debug("Duplicate notification prevented for user {} - Type: {}, Entity: {}, Actor: {}", 
+                                 recipient.getEmail(), builder.getType(), builder.getEntityId(), 
+                                 builder.getActor() != null ? builder.getActor().getEmail() : "null");
+                        return;
+                    }
+
+                    Notification notification = buildNotification(recipient, builder);
+                    notification = notificationRepository.save(notification);
+
+                    // Send real-time notification via WebSocket
+                    sendRealTimeNotification(notification);
+
+                    log.info("Notification created: {} for user {}", builder.getType(), recipient.getEmail());
+                } catch (Exception e) {
+                    log.error("Error in notification creation", e);
                 }
-
-                Notification notification = buildNotification(recipient, builder);
-                notification = notificationRepository.save(notification);
-
-                // Send real-time notification via WebSocket
-                sendRealTimeNotification(notification);
-
-                log.info("Notification created: {} for user {}", builder.getType(), recipient.getEmail());
             }
         } catch (Exception e) {
             log.error("Error creating notification", e);
@@ -481,7 +486,37 @@ public class NotificationService {
     @Async
     public void handleCommentLike(String commentOwnerEmail, String likerEmail, Long commentId) {
         if (!commentOwnerEmail.equals(likerEmail)) {
-            createSocialNotification(commentOwnerEmail, likerEmail, NotificationType.LIKE, commentId, "COMMENT");
+            // For comment likes, we need to navigate to the post, not the comment
+            // So we need to get the post ID from the comment
+            try {
+                Comment comment = commentRepository.findById(commentId)
+                    .orElseThrow(() -> new RuntimeException("Comment not found"));
+                Long postId = comment.getPost().getId();
+                
+                // Create notification with post ID for navigation, but keep comment ID in metadata
+                User actor = getUserByEmail(likerEmail);
+                Map<String, Object> metadata = new HashMap<>();
+                metadata.put("commentId", commentId);
+                metadata.put("postId", postId);
+                
+                NotificationBuilder builder = NotificationBuilder.builder()
+                        .recipientEmail(commentOwnerEmail)
+                        .actor(actor)
+                        .type(NotificationType.LIKE)
+                        .entityId(postId)  // Use post ID for navigation
+                        .entityType("COMMENT")  // But keep entity type as COMMENT for message
+                        .priority(NotificationPriority.NORMAL)
+                        .checkDuplicates(true)
+                        .generateContent(true)
+                        .metadata(metadata)
+                        .build();
+
+                createNotification(builder);
+            } catch (Exception e) {
+                log.error("Error handling comment like notification", e);
+                // Fallback to original behavior
+                createSocialNotification(commentOwnerEmail, likerEmail, NotificationType.LIKE, commentId, "COMMENT");
+            }
         }
     }
 
@@ -531,7 +566,7 @@ public class NotificationService {
         User actor = builder.getActor();
 
         String title = generateTitle(builder.getType(), actor);
-        String message = generateMessage(builder.getType(), actor, builder.getCustomMessage());
+        String message = generateMessage(builder.getType(), actor, builder.getCustomMessage(), builder.getEntityType());
         String actionUrl = generateActionUrl(builder.getEntityType(), builder.getEntityId());
         String groupKey = generateGroupKey(builder.getType(), builder.getEntityId(), builder.getEntityType());
 
@@ -573,15 +608,33 @@ public class NotificationService {
         }
 
         if (actor == null) {
-            return getDefaultMessage(type);
+            return getDefaultMessage(type, null);
         }
 
-        return actor.getUsername() + " " + getDefaultMessage(type);
+        return actor.getUsername() + " " + getDefaultMessage(type, null);
     }
 
-    private String getDefaultMessage(NotificationType type) {
+    private String generateMessage(NotificationType type, User actor, String customMessage, String entityType) {
+        if (customMessage != null && !customMessage.trim().isEmpty()) {
+            return customMessage;
+        }
+
+        if (actor == null) {
+            return getDefaultMessage(type, entityType);
+        }
+
+        return actor.getUsername() + " " + getDefaultMessage(type, entityType);
+    }
+
+    private String getDefaultMessage(NotificationType type, String entityType) {
         return switch (type) {
-            case LIKE -> "liked your post";
+            case LIKE -> {
+                if ("COMMENT".equals(entityType)) {
+                    yield "liked your comment";
+                } else {
+                    yield "liked your post";
+                }
+            }
             case COMMENT -> "commented on your post";
             case REPLY -> "replied to your comment";
             case FOLLOW -> "started following you";
@@ -704,21 +757,21 @@ public class NotificationService {
             }
         }
         
-        // For COMMENT notifications, check within the last 5 minutes to prevent spam but allow multiple comments
+        // For COMMENT notifications, check within the last 30 seconds to prevent spam/race conditions
         if (builder.getType() == NotificationType.COMMENT) {
-            java.util.Date fiveMinutesAgo = new java.util.Date(System.currentTimeMillis() - 5 * 60 * 1000);
+            java.util.Date thirtySecondsAgo = new java.util.Date(System.currentTimeMillis() - 30 * 1000);
             
             List<Notification> recentComments = notificationRepository
                     .findByEntityIdAndEntityTypeAndType(builder.getEntityId(), builder.getEntityType(), builder.getType())
                     .stream()
-                    .filter(n -> n.getRecipient().equals(recipient) &&
+                    .filter(n -> n.getRecipient().getId().equals(recipient.getId()) &&
                                 n.getActor() != null &&
-                                n.getActor().equals(builder.getActor()) &&
-                                n.getCreatedAt().after(fiveMinutesAgo))
+                                n.getActor().getId().equals(builder.getActor().getId()) &&
+                                n.getCreatedAt().after(thirtySecondsAgo))
                     .toList();
             
             if (!recentComments.isEmpty()) {
-                log.debug("Duplicate COMMENT notification prevented (within 5 minutes): actor={}, recipient={}, entityId={}, entityType={}", 
+                log.warn("Duplicate COMMENT notification prevented (within 30 seconds): actor={}, recipient={}, entityId={}, entityType={}", 
                          builder.getActor() != null ? builder.getActor().getEmail() : "null", 
                          recipient.getEmail(), builder.getEntityId(), builder.getEntityType());
                 return true;
@@ -730,9 +783,9 @@ public class NotificationService {
                 .findByEntityIdAndEntityTypeAndType(builder.getEntityId(), builder.getEntityType(), builder.getType());
 
         boolean hasDuplicate = existing.stream()
-                .anyMatch(n -> n.getRecipient().equals(recipient) &&
+                .anyMatch(n -> n.getRecipient().getId().equals(recipient.getId()) &&
                         n.getActor() != null &&
-                        n.getActor().equals(builder.getActor()));
+                        n.getActor().getId().equals(builder.getActor().getId()));
         
         if (hasDuplicate) {
             log.debug("Duplicate {} notification prevented: actor={}, recipient={}, entityId={}, entityType={}", 
