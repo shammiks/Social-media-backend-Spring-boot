@@ -2,6 +2,7 @@ package com.example.DPMHC_backend.service;
 
 import com.example.DPMHC_backend.dto.FollowDTO;
 import com.example.DPMHC_backend.dto.FollowStatusDTO;
+import com.example.DPMHC_backend.dto.UserDTO;
 import com.example.DPMHC_backend.exception.SelfFollowException;
 import com.example.DPMHC_backend.exception.UserNotFoundException;
 import com.example.DPMHC_backend.model.Follow;
@@ -165,15 +166,15 @@ public class FollowService {
     }
 
     @Transactional(readOnly = true)
-    public Page<FollowDTO> getFollowers(Long userId, Pageable pageable) {
+    public Page<UserDTO> getFollowers(Long userId, Pageable pageable) {
         return followRepository.findByFolloweeId(userId, pageable)
-                .map(this::convertToDTO);
+                .map(this::convertFollowToUserDTO);
     }
 
     @Transactional(readOnly = true)
-    public Page<FollowDTO> getFollowing(Long userId, Pageable pageable) {
+    public Page<UserDTO> getFollowing(Long userId, Pageable pageable) {
         return followRepository.findByFollowerId(userId, pageable)
-                .map(this::convertToDTO);
+                .map(this::convertFollowingToUserDTO);
     }
 
     // ========== COUNT METHODS ==========
@@ -207,6 +208,44 @@ public class FollowService {
     }
 
     private FollowDTO convertToDTO(Follow follow) {
-        return modelMapper.map(follow, FollowDTO.class);
+        return FollowDTO.builder()
+                .id(follow.getId())
+                .followerId(follow.getFollower().getId())
+                .followerUsername(follow.getFollower().getUsername())
+                .followerAvatar(follow.getFollower().getAvatar())
+                .followerProfilePicture(follow.getFollower().getProfileImageUrl())
+                .followeeId(follow.getFollowee().getId())
+                .followeeUsername(follow.getFollowee().getUsername())
+                .followeeAvatar(follow.getFollowee().getAvatar())
+                .followeeProfilePicture(follow.getFollowee().getProfileImageUrl())
+                .followedAt(follow.getFollowedAt() != null ? 
+                    follow.getFollowedAt().toInstant()
+                        .atZone(java.time.ZoneId.systemDefault())
+                        .toLocalDateTime() : null)
+                .build();
+    }
+
+    // Convert Follow to UserDTO for followers list (return follower info)
+    private UserDTO convertFollowToUserDTO(Follow follow) {
+        User follower = follow.getFollower();
+        return UserDTO.builder()
+                .id(follower.getId())
+                .username(follower.getUsername())
+                .email(follower.getEmail())
+                .avatar(follower.getAvatar())
+                .profileImageUrl(follower.getProfileImageUrl())
+                .build();
+    }
+
+    // Convert Follow to UserDTO for following list (return followee info)
+    private UserDTO convertFollowingToUserDTO(Follow follow) {
+        User followee = follow.getFollowee();
+        return UserDTO.builder()
+                .id(followee.getId())
+                .username(followee.getUsername())
+                .email(followee.getEmail())
+                .avatar(followee.getAvatar())
+                .profileImageUrl(followee.getProfileImageUrl())
+                .build();
     }
 }

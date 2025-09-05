@@ -2,6 +2,7 @@ package com.example.DPMHC_backend.controller;
 
 import com.example.DPMHC_backend.dto.FollowDTO;
 import com.example.DPMHC_backend.dto.FollowStatusDTO;
+import com.example.DPMHC_backend.dto.UserDTO;
 import com.example.DPMHC_backend.model.User;
 import com.example.DPMHC_backend.repository.UserRepository;
 import com.example.DPMHC_backend.service.FollowService;
@@ -70,22 +71,23 @@ public class FollowController {
         );
     }
 
-    // ========== LIST ENDPOINTS ==========
-    @GetMapping("/followers/{userId}")
-    public ResponseEntity<Page<FollowDTO>> getFollowers(
-            @PathVariable Long userId,
-            Pageable pageable) {
+
+    // ========== SECURE SELF-ONLY LIST ENDPOINTS ==========
+    @GetMapping("/followers/me")
+    public ResponseEntity<Page<UserDTO>> getMyFollowers(Pageable pageable) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        User currentUser = (User) authentication.getPrincipal();
         return ResponseEntity.ok(
-                followService.getFollowers(userId, pageable)
+                followService.getFollowers(currentUser.getId(), pageable)
         );
     }
 
-    @GetMapping("/following/{userId}")
-    public ResponseEntity<Page<FollowDTO>> getFollowing(
-            @PathVariable Long userId,
-            Pageable pageable) {
+    @GetMapping("/following/me")
+    public ResponseEntity<Page<UserDTO>> getMyFollowing(Pageable pageable) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        User currentUser = (User) authentication.getPrincipal();
         return ResponseEntity.ok(
-                followService.getFollowing(userId, pageable)
+                followService.getFollowing(currentUser.getId(), pageable)
         );
     }
 

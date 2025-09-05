@@ -86,24 +86,7 @@ public class CommentController {
                 .replyCount(0)
                 .build();
 
-        // 🔥 NEW: Send notification to comment owner
-        try {
-            Comment parentComment = reply.getParentComment();
-
-            // Only send notification if user is not replying to their own comment
-            if (!user.getId().equals(parentComment.getUser().getId())) {
-                notificationService.createNotification(
-                        parentComment.getUser().getId(),  // recipient (comment owner)
-                        user.getId(),                     // actor (person who replied)
-                        NotificationType.REPLY,
-                        reply.getPost().getId(),          // target (the post)
-                        request.getContent()              // reply content as message
-                );
-            }
-        } catch (Exception e) {
-            System.err.println("Failed to send reply notification: " + e.getMessage());
-        }
-
+        // Note: Notification is already handled in CommentService.addReply()
         return ResponseEntity.ok(dto);
     }
 
