@@ -48,6 +48,7 @@ public class SecurityConfig {
                                     "/api/auth/login",
                                     "/api/auth/verify",
                                     "/api/auth/request-password-reset",
+                                    "/api/auth/verify-reset-code",
                                     "/api/auth/reset-password",
                                     "/api/auth/refresh-token",
                                     "/actuator/health",

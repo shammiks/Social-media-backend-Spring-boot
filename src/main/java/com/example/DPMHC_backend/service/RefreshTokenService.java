@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 @RequiredArgsConstructor
@@ -20,6 +21,9 @@ import java.util.UUID;
 public class RefreshTokenService {
 
     private final RefreshTokenRepository refreshTokenRepository;
+    
+    // Add a concurrent map for token-level locking
+    private final ConcurrentHashMap<String, Object> tokenLocks = new ConcurrentHashMap<>();
 
     @Value("${app.jwt.refresh-expiration:2592000000}") // 30 days in milliseconds
     private long refreshTokenExpiration;
@@ -55,10 +59,20 @@ public class RefreshTokenService {
     }
 
     /**
-     * Find refresh token by token string
+     * Find refresh token by token string (thread-safe)
      */
     public Optional<RefreshToken> findByToken(String token) {
-        return refreshTokenRepository.findByTokenAndIsRevokedFalse(token);
+        // Use token-specific lock to prevent race conditions
+        Object lock = tokenLocks.computeIfAbsent(token, k -> new Object());
+        
+        synchronized (lock) {
+            try {
+                return refreshTokenRepository.findByTokenAndIsRevokedFalse(token);
+            } finally {
+                // Clean up lock if no longer needed (optional optimization)
+                tokenLocks.remove(token, lock);
+            }
+        }
     }
 
     /**
@@ -67,7 +81,9 @@ public class RefreshTokenService {
     public RefreshToken verifyExpiration(RefreshToken token) {
         if (token.isExpired()) {
             log.warn("Refresh token {} has expired", token.getToken());
-            refreshTokenRepository.delete(token);
+            // Mark as revoked instead of deleting immediately
+            token.revoke();
+            refreshTokenRepository.save(token);
             throw new RuntimeException("Refresh token was expired. Please make a new signin request");
         }
         
@@ -80,17 +96,30 @@ public class RefreshTokenService {
     }
 
     /**
-     * Revoke a specific refresh token
+     * Revoke a specific refresh token (thread-safe)
      */
     @Transactional
     public void revokeToken(String token) {
         log.info("Revoking refresh token: {}", token);
-        refreshTokenRepository.findByToken(token)
-                .ifPresent(refreshToken -> {
-                    refreshToken.revoke();
-                    refreshTokenRepository.save(refreshToken);
-                    log.info("Successfully revoked refresh token: {}", token);
-                });
+        
+        Object lock = tokenLocks.computeIfAbsent(token, k -> new Object());
+        
+        synchronized (lock) {
+            try {
+                refreshTokenRepository.findByToken(token)
+                        .ifPresent(refreshToken -> {
+                            if (!refreshToken.isRevoked()) { // Double-check
+                                refreshToken.revoke();
+                                refreshTokenRepository.save(refreshToken);
+                                log.info("Successfully revoked refresh token: {}", token);
+                            } else {
+                                log.info("Refresh token already revoked: {}", token);
+                            }
+                        });
+            } finally {
+                tokenLocks.remove(token, lock);
+            }
+        }
     }
 
     /**

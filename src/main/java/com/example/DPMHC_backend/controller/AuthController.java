@@ -11,6 +11,7 @@ import com.example.DPMHC_backend.repository.RefreshTokenRepository;
 import com.example.DPMHC_backend.repository.UserRepository;
 import com.example.DPMHC_backend.service.RefreshTokenService;
 import com.example.DPMHC_backend.service.UserService;
+import com.example.DPMHC_backend.security.JwtService;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +26,7 @@ import java.io.IOException;
 import java.security.Principal;
 import java.util.Map;
 import java.util.Optional;
+import jakarta.servlet.http.HttpServletRequest;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -35,6 +37,7 @@ public class AuthController {
     private final UserRepository userRepository;
     private final RefreshTokenService refreshTokenService;
     private final RefreshTokenRepository refreshTokenRepository;
+    private final JwtService jwtService;
 
     @PostMapping("/register")
     public ResponseEntity<?> register(@RequestBody User user) {
@@ -92,87 +95,120 @@ public class AuthController {
 
     @PostMapping("/request-password-reset")
     public ResponseEntity<?> requestPasswordReset(@RequestBody EmailRequest emailRequest) {
-        return ResponseEntity.ok(userService.sendPasswordResetLink(emailRequest.getEmail()));
+        return ResponseEntity.ok(userService.sendPasswordResetCode(emailRequest.getEmail()));
+    }
+
+    @PostMapping("/verify-reset-code")
+    public ResponseEntity<?> verifyResetCode(@RequestBody VerifyCodeRequest request) {
+        boolean isValid = userService.verifyResetCode(request.getEmail(), request.getCode());
+        if (isValid) {
+            return ResponseEntity.ok(Map.of("valid", true, "message", "Code verified successfully"));
+        } else {
+            return ResponseEntity.badRequest().body(Map.of("valid", false, "message", "Invalid or expired code"));
+        }
     }
 
     @PostMapping("/reset-password")
     public ResponseEntity<?> resetPassword(@RequestBody ResetPasswordRequest request) {
-        userService.resetPassword(request.getToken(), request.getNewPassword());
+        userService.resetPasswordWithCode(request.getEmail(), request.getCode(), request.getNewPassword());
         return ResponseEntity.ok("Password has been reset successfully.");
     }
 
-    @PostMapping("/refresh-token")
-    public ResponseEntity<?> refreshToken(@RequestBody TokenRefreshRequest request) {
+    @PostMapping("/request-authenticated-password-reset")
+    public ResponseEntity<?> requestAuthenticatedPasswordReset(
+            @RequestBody EmailRequest emailRequest,
+            HttpServletRequest request) {
         try {
-            String requestRefreshToken = request.getRefreshToken();
-            System.out.println("🔄 Refresh token request received for token: " + 
-                (requestRefreshToken != null ? requestRefreshToken.substring(0, Math.min(10, requestRefreshToken.length())) + "..." : "null"));
+            // Extract JWT token from Authorization header
+            String authHeader = request.getHeader("Authorization");
+            if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", "Authorization token required"));
+            }
+
+            String token = authHeader.substring(7);
+            String userEmail = jwtService.extractEmail(token);
             
+            // Validate that the requested email matches the authenticated user's email
+            if (!userEmail.equals(emailRequest.getEmail())) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", "You can only reset your own password"));
+            }
+
+            return ResponseEntity.ok(userService.sendPasswordResetCode(emailRequest.getEmail()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(Map.of("error", "Invalid or expired token"));
+        }
+    }
+
+    @PostMapping("/refresh-token")
+public ResponseEntity<?> refreshToken(@RequestBody TokenRefreshRequest request) {
+    try {
+        String requestRefreshToken = request.getRefreshToken();
+        System.out.println("🔄 Refresh token request received for token: " + 
+            (requestRefreshToken != null ? requestRefreshToken.substring(0, Math.min(10, requestRefreshToken.length())) + "..." : "null"));
+        
+        // Use synchronized block to prevent race conditions
+        synchronized (this) {
             // First check if token exists at all (including revoked ones)
             Optional<RefreshToken> anyToken = refreshTokenRepository.findByToken(requestRefreshToken);
             if (anyToken.isEmpty()) {
-                System.err.println("❌ Refresh token not found in database (may have been cleaned up): " + 
+                System.err.println("❌ Refresh token not found in database: " + 
                     (requestRefreshToken != null ? requestRefreshToken.substring(0, Math.min(10, requestRefreshToken.length())) + "..." : "null"));
                 throw new RuntimeException("Refresh token not found. Please login again.");
             }
             
             RefreshToken existingToken = anyToken.get();
+            
+            // Check if already revoked (race condition protection)
             if (existingToken.isRevoked()) {
-                System.err.println("❌ Refresh token has been revoked: " + 
+                System.err.println("❌ Refresh token already revoked: " + 
                     (requestRefreshToken != null ? requestRefreshToken.substring(0, Math.min(10, requestRefreshToken.length())) + "..." : "null"));
                 throw new RuntimeException("Refresh token is revoked. Please login again.");
             }
             
+            // Check expiration
             if (existingToken.isExpired()) {
                 System.err.println("❌ Refresh token has expired: " + 
                     (requestRefreshToken != null ? requestRefreshToken.substring(0, Math.min(10, requestRefreshToken.length())) + "..." : "null"));
-                // Delete expired token
-                refreshTokenRepository.delete(existingToken);
+                // Mark as revoked and save
+                existingToken.revoke();
+                refreshTokenRepository.save(existingToken);
                 throw new RuntimeException("Refresh token has expired. Please login again.");
             }
             
-            RefreshToken refreshToken = refreshTokenService.findByToken(requestRefreshToken)
-                    .orElseThrow(() -> new RuntimeException("Refresh token is not valid!"));
-            
-            System.out.println("✅ Found refresh token in database, verifying expiration...");
-            refreshToken = refreshTokenService.verifyExpiration(refreshToken);
-            User user = refreshToken.getUser();
-            
+            User user = existingToken.getUser();
             System.out.println("✅ Refresh token verified for user: " + user.getEmail());
             
-            // Check if token is already revoked (race condition protection)
-            if (existingToken.isRevoked()) {
-                System.out.println("❌ Refresh token was revoked during concurrent request: " + requestRefreshToken.substring(0, 10) + "...");
-                throw new RuntimeException("Refresh token is revoked. Please login again.");
-            }
-            
-            // Generate new access token and refresh token
+            // Generate new access token first
             String newAccessToken = userService.generateNewAccessToken(requestRefreshToken);
+            System.out.println("✅ Generated new access token");
+            
+            // Create new refresh token
             RefreshToken newRefreshToken = refreshTokenService.createRefreshToken(user);
+            System.out.println("✅ Generated new refresh token");
             
-            System.out.println("✅ Generated new tokens successfully");
-            
-            // Revoke the old refresh token AFTER successful generation
-            refreshTokenService.revokeToken(requestRefreshToken);
-            
+            // NOW revoke the old refresh token (after successful generation)
+            existingToken.revoke();
+            refreshTokenRepository.save(existingToken);
             System.out.println("✅ Revoked old refresh token");
             
             TokenRefreshResponse response = new TokenRefreshResponse(
                     newAccessToken, 
                     newRefreshToken.getToken(),
-                    300 // 5 minutes in seconds (matching JWT expiration)
+                    300 // 5 minutes in seconds
             );
             
             System.out.println("✅ Refresh token response prepared successfully");
             return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            System.err.println("❌ Refresh token failed: " + e.getMessage());
-            e.printStackTrace();
-            return ResponseEntity.badRequest()
-                    .body(Map.of("message", "Refresh token failed: " + e.getMessage()));
         }
+    } catch (Exception e) {
+        System.err.println("❌ Refresh token failed: " + e.getMessage());
+        return ResponseEntity.badRequest()
+                .body(Map.of("message", "Refresh token failed: " + e.getMessage()));
     }
-
+}
     @PostMapping("/logout")
     public ResponseEntity<?> logout(@RequestBody Map<String, String> request, Authentication authentication) {
         try {
@@ -277,8 +313,15 @@ public class AuthController {
 
     @Data
     static class ResetPasswordRequest {
-        private String token;
+        private String email;
+        private String code;
         private String newPassword;
+    }
+
+    @Data
+    static class VerifyCodeRequest {
+        private String email;
+        private String code;
     }
 
     @Data

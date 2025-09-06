@@ -188,41 +188,77 @@ public class UserService {
         return new LoginResponse(accessToken, refreshToken.getToken(), expiresIn);
     }
 
-
-    public String sendPasswordResetLink(String email) {
+    @Transactional
+    public String sendPasswordResetCode(String email) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("No user found with this email"));
 
-        tokenRepository.deleteByUser(user);
-        String token = UUID.randomUUID().toString();
+        // Find and delete any existing reset tokens for this user
+        List<PasswordResetToken> existingTokens = resetTokenRepository.findByUser(user);
+        if (!existingTokens.isEmpty()) {
+            resetTokenRepository.deleteAll(existingTokens);
+            resetTokenRepository.flush(); // Force the delete to be executed immediately
+        }
+        
+        // Generate a 5-digit code
+        String resetCode = String.format("%05d", (int)(Math.random() * 100000));
+        
         PasswordResetToken resetToken = PasswordResetToken.builder()
-                .token(token)
+                .token(resetCode) // Store the 5-digit code in the token field
                 .user(user)
-                .expiryDate(new Date(System.currentTimeMillis() + 1000 * 60 * 30)) // 30 minutes
+                .expiryDate(new Date(System.currentTimeMillis() + 1000 * 60 * 15)) // 15 minutes expiry
+                .verified(false) // Explicitly set verified to false
                 .build();
 
         resetTokenRepository.save(resetToken);
 
-        String resetLink = baseUrl + "/api/auth/reset-password-form?token=" + token;
-        emailService.sendPasswordResetEmail(user.getEmail(), resetLink);
+        // Send email with the 5-digit code
+        emailService.sendPasswordResetCodeEmail(user.getEmail(), resetCode);
 
-        return "Reset link sent to your email";
+        return "Reset code sent to your email";
     }
 
-    public String resetPassword(String token, String newPassword) {
-        PasswordResetToken resetToken = resetTokenRepository.findByToken(token)
-                .orElseThrow(() -> new RuntimeException("Invalid or expired token"));
+    public boolean verifyResetCode(String email, String code) {
+        try {
+            User user = userRepository.findByEmail(email)
+                    .orElseThrow(() -> new RuntimeException("No user found with this email"));
+
+            PasswordResetToken resetToken = resetTokenRepository.findByUserAndToken(user, code)
+                    .orElse(null);
+
+            if (resetToken == null) {
+                return false;
+            }
+
+            if (resetToken.getExpiryDate().before(new Date())) {
+                resetTokenRepository.delete(resetToken); // Clean up expired token
+                return false;
+            }
+
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    @Transactional
+    public String resetPasswordWithCode(String email, String code, String newPassword) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("No user found with this email"));
+
+        PasswordResetToken resetToken = resetTokenRepository.findByUserAndToken(user, code)
+                .orElseThrow(() -> new RuntimeException("Invalid or expired reset code"));
 
         if (resetToken.getExpiryDate().before(new Date())) {
-            throw new RuntimeException("Token has expired");
+            resetTokenRepository.delete(resetToken);
+            throw new RuntimeException("Reset code has expired");
         }
 
-        User user = resetToken.getUser();
         user.setPassword(passwordEncoder.encode(newPassword));
         user.setUpdatedAt(new Date());
 
         userRepository.save(user);
-        resetTokenRepository.delete(resetToken); // remove token after use
+        resetTokenRepository.delete(resetToken); // Remove token after use
 
         return "Password reset successful.";
     }

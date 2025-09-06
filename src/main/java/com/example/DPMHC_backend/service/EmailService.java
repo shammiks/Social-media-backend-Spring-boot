@@ -43,4 +43,15 @@ public class EmailService {
                 resetLink + "\n\nIf you didn't request this, please ignore this email.");
         mailSender.send(message);
     }
+
+    public void sendPasswordResetCodeEmail(String toEmail, String resetCode) {
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setTo(toEmail);
+        message.setSubject("Password Reset Code");
+        message.setText("You requested to reset your password. Use the following 5-digit code to proceed:\n\n" +
+                "Reset Code: " + resetCode + "\n\n" +
+                "This code will expire in 15 minutes.\n\n" +
+                "If you didn't request this, please ignore this email.");
+        mailSender.send(message);
+    }
 }

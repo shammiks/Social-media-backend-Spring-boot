@@ -18,8 +18,12 @@ public class PasswordResetToken {
 
     private String token;
 
-    @OneToOne
+    @ManyToOne
     private User user;
 
     private Date expiryDate;
+
+    @Builder.Default
+    @Column(nullable = false)
+    private Boolean verified = false;
 }
