@@ -29,6 +29,9 @@ public class WebSocketEventListener {
                 com.example.DPMHC_backend.model.User user = (com.example.DPMHC_backend.model.User) principal;
                 Long userId = user.getId();
                 log.info("WebSocket session connected: {} for user: {}", sessionId, userId);
+                
+                // CRITICAL: Register the user session immediately upon connection
+                webSocketService.registerUserSession(userId, sessionId);
             } else {
                 log.warn("WebSocket session connected with unknown principal type: {}", principal.getClass());
             }

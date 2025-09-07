@@ -93,6 +93,31 @@ public class AuthController {
         }
     }
 
+    @GetMapping("/me")
+    public ResponseEntity<UserDTO> getCurrentUser(Authentication authentication) {
+        try {
+            if (authentication == null || !authentication.isAuthenticated()) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+            }
+
+            User currentUser = (User) authentication.getPrincipal();
+            UserDTO userDTO = UserDTO.builder()
+                    .id(currentUser.getId())
+                    .username(currentUser.getUsername())
+                    .email(currentUser.getEmail())
+                    .avatar(currentUser.getAvatar())
+                    .bio(currentUser.getBio())
+                    .isAdmin(currentUser.isAdmin())
+                    .build();
+
+            return ResponseEntity.ok(userDTO);
+        } catch (ClassCastException e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+        }
+    }
+
     @PostMapping("/request-password-reset")
     public ResponseEntity<?> requestPasswordReset(@RequestBody EmailRequest emailRequest) {
         return ResponseEntity.ok(userService.sendPasswordResetCode(emailRequest.getEmail()));
