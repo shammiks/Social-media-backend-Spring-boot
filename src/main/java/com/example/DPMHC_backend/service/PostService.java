@@ -11,13 +11,15 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.CachePut;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -36,6 +38,7 @@ public class PostService {
 
     // CREATE POST
     @Transactional
+    @CacheEvict(value = {"user-posts", "postsByUser", "posts"}, allEntries = true)
     public Post createPost(String content, MultipartFile image, MultipartFile video,
                            MultipartFile pdf, boolean isPublic, String userEmail) {
         User user = userRepository.findByEmail(userEmail)
@@ -79,28 +82,43 @@ public class PostService {
         }
     }
 
-    // GET POSTS
+    // GET POSTS - OPTIMIZED VERSION
     @Transactional(readOnly = true)
     public Page<PostDTO> getAllPosts(Pageable pageable, String currentUserEmail) {
-        return postRepository.findAll(pageable)
-                .map(post -> mapToDTO(post, currentUserEmail));
+        Page<Post> postsPage = postRepository.findAllWithUser(pageable);
+        List<PostDTO> optimizedDTOs = mapToDTOs(postsPage.getContent(), currentUserEmail);
+        
+        return new org.springframework.data.domain.PageImpl<>(
+            optimizedDTOs, 
+            pageable, 
+            postsPage.getTotalElements()
+        );
     }
 
+    @Cacheable(value = "postById", key = "#postId")
     public Post getPostById(Long postId) {
         return postRepository.findById(postId)
                 .orElseThrow(() -> new RuntimeException("Post not found with id: " + postId));
     }
 
     @Transactional(readOnly = true)
+    @Cacheable(value = "postsByUser", key = "#userId + '_' + #pageable.pageNumber + '_' + #pageable.pageSize + '_' + #currentUserEmail")
     public Page<PostDTO> getPostsByUser(Long userId, Pageable pageable, String currentUserEmail) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        return postRepository.findByUser(user, pageable)
-                .map(post -> mapToDTO(post, currentUserEmail));
+        Page<Post> postsPage = postRepository.findByUser(user, pageable);
+        List<PostDTO> optimizedDTOs = mapToDTOs(postsPage.getContent(), currentUserEmail);
+        
+        return new org.springframework.data.domain.PageImpl<>(
+            optimizedDTOs, 
+            pageable, 
+            postsPage.getTotalElements()
+        );
     }
 
     @Transactional(readOnly = true)
+    @Cacheable(value = "postDTO", key = "#id + '_' + #currentUserEmail")
     public PostDTO getPost(Long id, String currentUserEmail) {
         Post post = postRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Post not found"));
@@ -133,6 +151,7 @@ public class PostService {
     }
 
     @Transactional(readOnly = true)
+    @Cacheable(value = "userLikeStatus", key = "#postId + '_' + #userEmail")
     public boolean hasUserLikedPost(Long postId, String userEmail) {
         if (userEmail == null) {
             return false; // Anonymous users haven't liked anything
@@ -148,16 +167,17 @@ public class PostService {
     }
 
     @Transactional(readOnly = true)
+    @org.springframework.cache.annotation.Cacheable(value = "user-posts", key = "#userEmail", unless = "#result == null")
     public List<PostDTO> getUserPosts(String userEmail, String currentUserEmail) {
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        return postRepository.findByUser(user).stream()
-                .map(post -> mapToDTO(post, currentUserEmail))
-                .toList();
+        List<Post> posts = postRepository.findByUser(user);
+        return mapToDTOs(posts, currentUserEmail);
     }
 
     @Transactional
+    @CacheEvict(value = {"postById", "postDTO", "postsByUser", "user-posts", "userLikeStatus", "posts"}, allEntries = true)
     public void deletePost(Long postId, String currentUserEmail) {
         Post post = postRepository.findById(postId)
                 .orElseThrow(() -> new RuntimeException("Post not found"));
@@ -206,7 +226,7 @@ public class PostService {
         }
     }
 
-    // DTO MAPPING
+    // DTO MAPPING - OPTIMIZED VERSION
     public PostDTO mapToDTO(Post post, String currentUserEmail) {
         boolean isLiked = currentUserEmail != null &&
                 likeRepository.existsByPostAndUserEmail(post, currentUserEmail);
@@ -233,6 +253,51 @@ public class PostService {
         .avatar(post.getUser().getAvatar())
         .profileImageUrl(post.getUser().getProfileImageUrl())
         .build();
+    }
+
+    // OPTIMIZED BATCH DTO MAPPING - ELIMINATES N+1 PROBLEMS
+    public List<PostDTO> mapToDTOs(List<Post> posts, String currentUserEmail) {
+        if (posts.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        // Batch fetch liked post IDs for current user
+        final Set<Long> likedPostIds = currentUserEmail != null 
+            ? new HashSet<>(likeRepository.findLikedPostIdsByUserEmail(posts, currentUserEmail))
+            : Collections.emptySet();
+
+        // Batch fetch bookmarked post IDs for current user
+        final Set<Long> bookmarkedPostIds = currentUserEmail != null 
+            ? new HashSet<>(bookmarkRepository.findBookmarkedPostIdsByUserEmail(posts, currentUserEmail))
+            : Collections.emptySet();
+
+        // Batch fetch comment counts
+        Map<Long, Long> commentCounts = commentRepository.countCommentsByPosts(posts).stream()
+                .collect(Collectors.toMap(
+                    result -> (Long) result[0],
+                    result -> (Long) result[1]
+                ));
+
+        // Map to DTOs using the batched data
+        return posts.stream()
+                .map(post -> PostDTO.builder()
+                    .id(post.getId())
+                    .content(post.getContent())
+                    .imageUrl(post.getImageUrl())
+                    .videoUrl(post.getVideoUrl())
+                    .pdfUrl(post.getPdfUrl())
+                    .isPublic(post.isPublic())
+                    .likes(post.getLikesCount())
+                    .isLikedByCurrentUser(likedPostIds.contains(post.getId()))
+                    .commentsCount(Math.toIntExact(commentCounts.getOrDefault(post.getId(), 0L)))
+                    .isBookmarkedByCurrentUser(bookmarkedPostIds.contains(post.getId()))
+                    .createdAt(post.getCreatedAt())
+                    .username(post.getUser().getUsername())
+                    .userId(post.getUser().getId())
+                    .avatar(post.getUser().getAvatar())
+                    .profileImageUrl(post.getUser().getProfileImageUrl())
+                    .build())
+                .collect(Collectors.toList());
     }
 
     @Data

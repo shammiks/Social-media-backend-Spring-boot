@@ -36,11 +36,14 @@ public class Post {
     }
 
     @OneToMany(mappedBy = "post", cascade = CascadeType.ALL, orphanRemoval = true)
+    @org.hibernate.annotations.BatchSize(size = 20)
+    @lombok.Builder.Default
     private Set<Like> likes = new HashSet<>();
 
     // Add this method to safely get likes count
     // Use this field instead for like count
     @Column(nullable = false, columnDefinition = "int default 0")
+    @lombok.Builder.Default
     private int likesCount = 0;
 
     // Add this method to get the actual likes collection when needed
@@ -54,16 +57,20 @@ public class Post {
             joinColumns = @JoinColumn(name = "post_id"),
             inverseJoinColumns = @JoinColumn(name = "user_id")
     )
-
+    @org.hibernate.annotations.BatchSize(size = 20)
+    @lombok.Builder.Default
     private Set<User> likedBy = new HashSet<>();
 
     @OneToMany(mappedBy = "post", cascade = CascadeType.ALL, orphanRemoval = true)
+    @org.hibernate.annotations.BatchSize(size = 20)
+    @lombok.Builder.Default
     private Set<Bookmark> bookmarks = new HashSet<>();
 
     private String pdfUrl;
 
     private Date createdAt;
 
+    @lombok.Builder.Default
     private boolean reported = false;
 
     private Date updatedAt;
@@ -73,5 +80,7 @@ public class Post {
     private User user;
 
     @OneToMany(mappedBy = "post", cascade = CascadeType.ALL, orphanRemoval = true)
+    @org.hibernate.annotations.BatchSize(size = 20)
+    @lombok.Builder.Default
     private List<Comment> comments = new ArrayList<>();
 }

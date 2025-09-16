@@ -34,6 +34,7 @@ public class RefreshToken {
     private LocalDateTime revokedAt;
 
     @Column(nullable = false)
+    @lombok.Builder.Default
     private boolean isRevoked = false;
 
     @PrePersist

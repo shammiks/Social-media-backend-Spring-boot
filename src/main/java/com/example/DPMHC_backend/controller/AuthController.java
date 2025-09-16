@@ -27,6 +27,7 @@ import java.security.Principal;
 import java.util.Map;
 import java.util.Optional;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.beans.factory.annotation.Value;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -38,6 +39,9 @@ public class AuthController {
     private final RefreshTokenService refreshTokenService;
     private final RefreshTokenRepository refreshTokenRepository;
     private final JwtService jwtService;
+
+    @Value("${app.jwt.expiration}")
+    private long jwtExpiration;
 
     @PostMapping("/register")
     public ResponseEntity<?> register(@RequestBody User user) {
@@ -222,7 +226,7 @@ public ResponseEntity<?> refreshToken(@RequestBody TokenRefreshRequest request) 
             TokenRefreshResponse response = new TokenRefreshResponse(
                     newAccessToken, 
                     newRefreshToken.getToken(),
-                    300 // 5 minutes in seconds
+                    jwtExpiration / 1000 // Convert milliseconds to seconds
             );
             
             System.out.println("✅ Refresh token response prepared successfully");

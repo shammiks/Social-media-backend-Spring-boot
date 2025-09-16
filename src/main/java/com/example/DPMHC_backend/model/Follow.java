@@ -28,6 +28,7 @@ public class Follow {
     private User followee;
 
     @Column(name = "active")
+    @lombok.Builder.Default
     private boolean active = true;  // soft delete flag
 
     @Temporal(TemporalType.TIMESTAMP)

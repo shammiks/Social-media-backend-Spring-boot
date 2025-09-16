@@ -9,6 +9,9 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.CachePut;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -35,6 +38,7 @@ public class MessageService {
      * Send a new message
      */
     @Transactional
+    @CacheEvict(value = {"chatMessages", "userChats", "userChatsList", "chatById"}, allEntries = true)
     public MessageDTO sendMessage(MessageSendRequestDTO request, Long userId) {
         // Debug logging to see what's being received
         log.info("Received message send request: {}", request);
@@ -139,6 +143,7 @@ public class MessageService {
      * Get messages in a chat with pagination
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Cacheable(value = "chatMessages", key = "#chatId + '_' + #userId + '_' + #pageable.pageNumber + '_' + #pageable.pageSize")
     public Page<MessageDTO> getChatMessages(Long chatId, Long userId, Pageable pageable) {
         // Verify user is participant
         if (!chatRepository.isUserParticipantOfChat(chatId, userId)) {

@@ -23,6 +23,9 @@ import com.example.DPMHC_backend.model.VerificationToken;
 import com.example.DPMHC_backend.repository.VerificationTokenRepository;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.CachePut;
 
 import java.io.IOException;
 import java.util.List;
@@ -51,6 +54,9 @@ public class UserService {
 
     @Value("${app.base.url}")
     private String baseUrl;
+
+    @Value("${app.jwt.expiration}")
+    private long jwtExpiration;
 
 
     private final List<String> allowedDomains = List.of("gmail.com", "yahoo.com", "outlook.com");
@@ -182,8 +188,8 @@ public class UserService {
         // Create refresh token
         RefreshToken refreshToken = refreshTokenService.createRefreshToken(user);
         
-        // JWT expiration time in seconds (5 minutes)
-        Long expiresIn = 300L;
+        // JWT expiration time in seconds - convert from milliseconds to seconds
+        Long expiresIn = jwtExpiration / 1000;
         
         return new LoginResponse(accessToken, refreshToken.getToken(), expiresIn);
     }
@@ -265,6 +271,7 @@ public class UserService {
 
 
 
+    @Cacheable(value = "userByEmail", key = "#email")
     public UserDTO getUserByEmail(String email) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
@@ -272,11 +279,13 @@ public class UserService {
         return mapToDTO(user);
     }
 
+    @Cacheable(value = "userEntityByEmail", key = "#email")
     public User getUserEntityByEmail(String email) {
         return userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
     }
 
+    @CacheEvict(value = {"userByEmail", "userEntityByEmail", "userById"}, key = "#email", allEntries = false)
     public UserDTO updateAvatar(MultipartFile file, String email) throws IOException {
         User user = userRepository.findByEmail(email).orElseThrow(() -> new UsernameNotFoundException("User not found"));
         String imageUrl = cloudinaryService.uploadFile(file, "avatars");
@@ -286,6 +295,7 @@ public class UserService {
     }
 
     @Transactional
+    @CacheEvict(value = {"userByEmail", "userEntityByEmail", "userById"}, key = "#email", allEntries = false)
     public UserDTO updateBio(String bio, String email) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found"));
@@ -302,6 +312,7 @@ public class UserService {
     }
 
     @Transactional(readOnly = true)
+    @Cacheable(value = "userPosts", key = "#userId + '_' + #pageable.pageNumber + '_' + #pageable.pageSize + '_' + #currentUserEmail")
     public Page<PostDTO> getPostsByUser(Long userId, Pageable pageable, String currentUserEmail) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
@@ -351,6 +362,7 @@ public class UserService {
     /**
      * Get user by ID with blocking context
      */
+    @Cacheable(value = "userById", key = "#userId")
     public User getUserById(Long userId) {
         return userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
@@ -359,6 +371,7 @@ public class UserService {
     /**
      * Check if user exists
      */
+    @Cacheable(value = "userExists", key = "#userId")
     public boolean userExists(Long userId) {
         return userRepository.existsById(userId);
     }

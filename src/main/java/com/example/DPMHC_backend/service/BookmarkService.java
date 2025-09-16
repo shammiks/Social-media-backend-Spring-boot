@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.Date;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -69,11 +70,15 @@ public class BookmarkService {
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        List<Bookmark> bookmarks = bookmarkRepository.findByUserOrderByCreatedAtDesc(user);
+        // Use optimized query with JOIN FETCH to avoid N+1
+        List<Bookmark> bookmarks = bookmarkRepository.findByUserWithPostDetailsOrderByCreatedAtDesc(user);
 
-        return bookmarks.stream()
-                .map(bookmark -> postService.mapToDTO(bookmark.getPost(), userEmail))
-                .toList();
+        // Extract posts and use batch mapping
+        List<Post> posts = bookmarks.stream()
+                .map(Bookmark::getPost)
+                .collect(java.util.stream.Collectors.toList());
+
+        return postService.mapToDTOs(posts, userEmail);
     }
 
 
@@ -82,9 +87,21 @@ public class BookmarkService {
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        Page<Bookmark> bookmarks = bookmarkRepository.findByUserOrderByCreatedAtDesc(user, pageable);
+        // Use optimized query with JOIN FETCH to avoid N+1
+        Page<Bookmark> bookmarks = bookmarkRepository.findByUserWithPostDetailsOrderByCreatedAtDesc(user, pageable);
 
-        return bookmarks.map(bookmark -> postService.mapToDTO(bookmark.getPost(), userEmail));
+        // Extract posts and use batch mapping for the page content
+        List<Post> posts = bookmarks.getContent().stream()
+                .map(Bookmark::getPost)
+                .collect(java.util.stream.Collectors.toList());
+
+        List<PostDTO> optimizedDTOs = postService.mapToDTOs(posts, userEmail);
+        
+        return new org.springframework.data.domain.PageImpl<>(
+            optimizedDTOs, 
+            pageable, 
+            bookmarks.getTotalElements()
+        );
     }
 
     @Data

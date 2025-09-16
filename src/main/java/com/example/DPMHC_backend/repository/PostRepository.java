@@ -40,4 +40,30 @@ public interface PostRepository extends JpaRepository<Post, Long> {
     Page<Post> findBookmarkedPostsByUser(@Param("user") User user, Pageable pageable);
 
     List<Post> findByUser(User user);
+
+    // OPTIMIZED BATCH QUERIES TO ELIMINATE N+1 PROBLEMS
+    @Query("SELECT p FROM Post p JOIN FETCH p.user WHERE p IN :posts")
+    List<Post> findPostsWithUsers(@Param("posts") List<Post> posts);
+
+    // Get all posts with user details for feed (eliminates user N+1)
+    @Query("SELECT p FROM Post p JOIN FETCH p.user WHERE p.isPublic = true ORDER BY p.createdAt DESC")
+    List<Post> findPublicPostsWithUsers();
+
+    @Query("SELECT p FROM Post p JOIN FETCH p.user WHERE p.user IN :users ORDER BY p.createdAt DESC")
+    List<Post> findByUsersWithUserDetails(@Param("users") List<User> users);
+
+    // PROJECTION QUERIES FOR LIGHTWEIGHT DATA TRANSFER
+    @Query("SELECT p.id as id, p.content as content, p.imageUrl as imageUrl, p.videoUrl as videoUrl, " +
+           "p.pdfUrl as pdfUrl, p.isPublic as isPublic, p.likesCount as likesCount, p.createdAt as createdAt, " +
+           "u.username as username, u.id as userId, u.avatar as avatar, u.profileImageUrl as profileImageUrl " +
+           "FROM Post p JOIN p.user u " +
+           "WHERE p.isPublic = true ORDER BY p.createdAt DESC")
+    List<com.example.DPMHC_backend.dto.projection.PostFeedProjection> findPublicPostsProjection();
+
+    @Query("SELECT p.id as id, p.content as content, p.imageUrl as imageUrl, p.videoUrl as videoUrl, " +
+           "p.pdfUrl as pdfUrl, p.isPublic as isPublic, p.likesCount as likesCount, p.createdAt as createdAt, " +
+           "u.username as username, u.id as userId, u.avatar as avatar, u.profileImageUrl as profileImageUrl " +
+           "FROM Post p JOIN p.user u " +
+           "WHERE u.id = :userId ORDER BY p.createdAt DESC")
+    List<com.example.DPMHC_backend.dto.projection.PostFeedProjection> findUserPostsProjection(@Param("userId") Long userId);
 }

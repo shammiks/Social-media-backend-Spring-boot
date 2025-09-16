@@ -14,6 +14,7 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final WebSocketJwtInterceptor webSocketJwtInterceptor;
+    private final WebSocketHandshakeInterceptor webSocketHandshakeInterceptor;
 
     @Override
     public void configureMessageBroker(MessageBrokerRegistry config) {
@@ -37,15 +38,18 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         // Register STOMP endpoints for WebSocket connection
         registry.addEndpoint("/ws")
                 .setAllowedOriginPatterns("*") // Configure according to your frontend domain
+                .addInterceptors(webSocketHandshakeInterceptor) // Add handshake interceptor for JWT authentication
                 .withSockJS(); // Enable SockJS fallback options
 
         // Additional endpoint without SockJS for modern browsers
         registry.addEndpoint("/ws")
-                .setAllowedOriginPatterns("*");
+                .setAllowedOriginPatterns("*")
+                .addInterceptors(webSocketHandshakeInterceptor); // Add handshake interceptor for JWT authentication
 
         // Keep the notifications endpoint for backward compatibility
         registry.addEndpoint("/ws/notifications")
                 .setAllowedOriginPatterns("*")
+                .addInterceptors(webSocketHandshakeInterceptor) // Add handshake interceptor for JWT authentication
                 .withSockJS();
     }
 }

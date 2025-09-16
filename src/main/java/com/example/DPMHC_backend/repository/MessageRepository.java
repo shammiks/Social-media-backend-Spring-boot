@@ -100,4 +100,61 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
             "WHERE m.replyToId = :messageId AND m.isDeleted = false " +
             "ORDER BY m.createdAt ASC")
     List<Message> findRepliestoMessage(@Param("messageId") Long messageId);
+
+    // OPTIMIZED JOIN FETCH QUERIES TO ELIMINATE N+1 PROBLEMS
+    
+    // Find messages with sender and chat details for efficient loading
+    @Query("SELECT m FROM Message m " +
+            "JOIN FETCH m.sender " +
+            "JOIN FETCH m.chat " +
+            "WHERE m.chat.id = :chatId AND m.isDeleted = false " +
+            "ORDER BY m.createdAt DESC")
+    Page<Message> findMessagesByChatIdWithDetails(@Param("chatId") Long chatId, Pageable pageable);
+
+    @Query("SELECT m FROM Message m " +
+            "JOIN FETCH m.sender " +
+            "JOIN FETCH m.chat " +
+            "WHERE m.chat.id = :chatId AND m.isDeleted = false " +
+            "ORDER BY m.createdAt ASC")
+    List<Message> findMessagesByChatIdWithDetailsOrderByCreatedAt(@Param("chatId") Long chatId);
+
+    // Find messages with reactions and read statuses
+    @Query("SELECT DISTINCT m FROM Message m " +
+            "LEFT JOIN FETCH m.reactions " +
+            "LEFT JOIN FETCH m.readStatuses " +
+            "JOIN FETCH m.sender " +
+            "JOIN FETCH m.chat " +
+            "WHERE m.chat.id = :chatId AND m.isDeleted = false " +
+            "ORDER BY m.createdAt DESC")
+    List<Message> findMessagesWithReactionsAndReadStatuses(@Param("chatId") Long chatId);
+
+    // Find latest message with all details
+    @Query("SELECT m FROM Message m " +
+            "JOIN FETCH m.sender " +
+            "JOIN FETCH m.chat " +
+            "WHERE m.chat.id = :chatId AND m.isDeleted = false " +
+            "ORDER BY m.createdAt DESC " +
+            "LIMIT 1")
+    Optional<Message> findLatestMessageInChatWithDetails(@Param("chatId") Long chatId);
+
+    // PROJECTION QUERIES FOR LIGHTWEIGHT MESSAGE LISTS
+    @Query("SELECT m.id as id, m.content as content, m.messageType as messageType, " +
+           "m.mediaUrl as mediaUrl, m.thumbnailUrl as thumbnailUrl, m.isEdited as isEdited, " +
+           "m.isDeleted as isDeleted, m.createdAt as createdAt, m.replyToId as replyToId, " +
+           "u.id as senderId, u.username as senderUsername, u.avatar as senderAvatar " +
+           "FROM Message m " +
+           "JOIN m.sender u " +
+           "WHERE m.chat.id = :chatId AND m.isDeleted = false " +
+           "ORDER BY m.createdAt DESC")
+    List<com.example.DPMHC_backend.dto.projection.MessageProjection> findMessageProjectionsByChatId(@Param("chatId") Long chatId);
+
+    @Query("SELECT m.id as id, m.content as content, m.messageType as messageType, " +
+           "m.mediaUrl as mediaUrl, m.thumbnailUrl as thumbnailUrl, m.isEdited as isEdited, " +
+           "m.isDeleted as isDeleted, m.createdAt as createdAt, m.replyToId as replyToId, " +
+           "u.id as senderId, u.username as senderUsername, u.avatar as senderAvatar " +
+           "FROM Message m " +
+           "JOIN m.sender u " +
+           "WHERE m.chat.id = :chatId AND m.isDeleted = false " +
+           "ORDER BY m.createdAt DESC")
+    org.springframework.data.domain.Page<com.example.DPMHC_backend.dto.projection.MessageProjection> findMessageProjectionsByChatId(@Param("chatId") Long chatId, org.springframework.data.domain.Pageable pageable);
 }

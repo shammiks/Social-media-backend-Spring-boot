@@ -36,11 +36,13 @@ public class MessageController {
             @RequestBody String rawBody,
             Authentication authentication) {
 
-        log.info("=== MESSAGE SEND ENDPOINT HIT ===");
+        log.info("🔥🔥🔥 MESSAGE SEND ENDPOINT HIT 🔥🔥🔥");
         log.info("Authentication: {}", authentication);
         log.info("User Principal: {}", authentication != null ? authentication.getPrincipal() : "NULL");
         log.info("Request URL: {}", httpRequest.getRequestURL());
         log.info("Request Method: {}", httpRequest.getMethod());
+        log.info("Request Headers: Content-Type={}, Authorization={}", 
+                httpRequest.getContentType(), httpRequest.getHeader("Authorization"));
         
         // Debug the raw request
         log.info("DEBUG: Content-Type: {}", httpRequest.getContentType());
@@ -61,7 +63,13 @@ public class MessageController {
         }
 
         Long userId = getUserIdFromAuth(authentication);
+        log.info("🔥 SENDING MESSAGE: User ID: {}, Chat ID: {}, Content: '{}'", 
+                userId, request.getChatId(), request.getContent());
+        
         MessageDTO message = messageService.sendMessage(request, userId);
+        
+        log.info("🔥 MESSAGE SENT SUCCESSFULLY: Message ID: {}, Chat ID: {}", 
+                message.getId(), message.getChatId());
 
         return ResponseEntity.status(HttpStatus.CREATED).body(message);
     }

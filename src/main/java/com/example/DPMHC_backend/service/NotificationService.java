@@ -15,6 +15,9 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.CachePut;
 
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -36,6 +39,7 @@ public class NotificationService {
     // ======================== ENHANCED NOTIFICATION STATE MANAGEMENT ========================
 
     @Transactional
+    @CacheEvict(value = {"unreadNotificationCount", "unseenNotificationCount", "userNotifications"}, key = "#userEmail", allEntries = false)
     public NotificationDTO markAsReadAndReturn(Long notificationId, String userEmail) {
         log.debug("Marking notification {} as read for user {}", notificationId, userEmail);
 
@@ -376,6 +380,7 @@ public class NotificationService {
 
     // ======================== QUERYING AND FILTERING ========================
 
+    @Cacheable(value = "userNotifications", key = "#email + '_' + #pageable.pageNumber + '_' + #pageable.pageSize")
     public Page<NotificationDTO> getNotifications(String email, Pageable pageable) {
         log.debug("Fetching notifications for user: {}, page: {}, size: {}",
                 email, pageable.getPageNumber(), pageable.getPageSize());
@@ -429,6 +434,7 @@ public class NotificationService {
 
     // ======================== STATISTICS AND COUNTS ========================
 
+    @Cacheable(value = "unreadNotificationCount", key = "#email")
     public long getUnreadCount(String email) {
         User user = getUserByEmail(email);
         long count = notificationRepository.countByRecipientAndIsRead(user, false);
@@ -436,6 +442,7 @@ public class NotificationService {
         return count;
     }
 
+    @Cacheable(value = "unseenNotificationCount", key = "#email")
     public long getUnseenCount(String email) {
         User user = getUserByEmail(email);
         long count = notificationRepository.countByRecipientAndIsSeenAndIsRead(user, false, false);

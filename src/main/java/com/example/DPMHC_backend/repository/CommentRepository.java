@@ -35,4 +35,8 @@ public interface CommentRepository extends JpaRepository<Comment, Long> {
     // Count only top-level comments for a post
     @Query("SELECT COUNT(c) FROM Comment c WHERE c.post = :post AND c.parentComment IS NULL")
     long countByPostAndParentCommentIsNull(@Param("post") Post post);
+
+    // BATCH QUERIES TO ELIMINATE N+1 PROBLEMS
+    @Query("SELECT c.post.id, COUNT(c) FROM Comment c WHERE c.post IN :posts GROUP BY c.post.id")
+    List<Object[]> countCommentsByPosts(@Param("posts") List<Post> posts);
 }

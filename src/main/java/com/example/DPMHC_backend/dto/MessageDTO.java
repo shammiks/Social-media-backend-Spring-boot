@@ -47,6 +47,7 @@ public class MessageDTO {
     public MessageDTO(Message message) {
         this.id = message.getId();
         this.chatId = message.getChat() != null ? message.getChat().getId() : null;
+        this.sender = message.getSender() != null ? new UserDTO(message.getSender()) : null;
         this.content = message.getContent();
         this.messageType = message.getMessageType();
         this.mediaUrl = message.getMediaUrl();

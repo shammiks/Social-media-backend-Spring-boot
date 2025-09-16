@@ -8,6 +8,7 @@ import com.example.DPMHC_backend.repository.PostRepository;
 import com.example.DPMHC_backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.cache.annotation.CacheEvict;
 
 @Service
 @RequiredArgsConstructor
@@ -17,6 +18,7 @@ public class LikeService {
     private final PostRepository postRepository;
     private final UserRepository userRepository;
 
+    @CacheEvict(value = {"userLikeStatus", "postDTO", "like-counts"}, allEntries = true)
     public void toggleLike(Long postId, String email) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));

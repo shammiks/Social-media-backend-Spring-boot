@@ -37,6 +37,7 @@ public class Message {
 
     @Column(name = "message_type")
     @Enumerated(EnumType.STRING)
+    @lombok.Builder.Default
     private MessageType messageType = MessageType.TEXT;
 
     @Column(name = "media_url")
@@ -52,12 +53,15 @@ public class Message {
     private String thumbnailUrl;
 
     @Column(name = "is_edited")
+    @lombok.Builder.Default
     private Boolean isEdited = false;
 
     @Column(name = "is_deleted" , nullable = false)
+    @lombok.Builder.Default
     private Boolean isDeleted = false;
 
     @Column(name = "is_pinned")
+    @lombok.Builder.Default
     private Boolean isPinned = false;
 
     @Column(name = "reply_to_id")
@@ -76,9 +80,13 @@ public class Message {
 
     // Relationships
     @OneToMany(mappedBy = "message", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @org.hibernate.annotations.BatchSize(size = 20)
+    @lombok.Builder.Default
     private List<MessageReaction> reactions = new ArrayList<>();
 
     @OneToMany(mappedBy = "message", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @org.hibernate.annotations.BatchSize(size = 20)
+    @lombok.Builder.Default
     private List<MessageReadStatus> readStatuses = new ArrayList<>();
 
     public enum MessageType {

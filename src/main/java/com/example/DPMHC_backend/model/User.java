@@ -27,6 +27,7 @@ public class User {
     private String email;
 
     private String verificationToken;
+    @lombok.Builder.Default
     private boolean isEmailVerified = false;
 
 
@@ -35,6 +36,7 @@ public class User {
     private Role role;
 
     @Column(nullable = false)
+    @lombok.Builder.Default
     private boolean banned = false;
 
     private String password;
@@ -48,6 +50,8 @@ public class User {
     private String bio;
 
     @ManyToMany(mappedBy = "likedBy")
+    @org.hibernate.annotations.BatchSize(size = 20)
+    @lombok.Builder.Default
     private Set<Post> likedPosts = new HashSet<>();
 
 

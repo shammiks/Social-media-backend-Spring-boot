@@ -72,45 +72,86 @@ public class WebSocketService {
      * Broadcast new message to all chat participants
      */
     public void broadcastNewMessage(MessageDTO message) {
-        try {
-            log.info("=== BROADCASTING NEW MESSAGE ===");
-            log.info("Message ID: {}, Chat ID: {}", message.getId(), message.getChatId());
+    try {
+        log.info("=== BROADCASTING NEW MESSAGE ===");
+        log.info("Message ID: {}, Chat ID: {}, Sender ID: {}", 
+                message.getId(), message.getChatId(), 
+                message.getSender() != null ? message.getSender().getId() : "NULL");
+        log.info("Message Content: {}", message.getContent());
+        
+        // Get all participants of the chat
+        List<ChatParticipant> participants = participantRepository
+                .findByChatIdAndActive(message.getChatId());
+
+        log.info("Found {} participants for chat {}", participants.size(), message.getChatId());
+        
+        // Log all participant IDs for debugging
+        for (ChatParticipant p : participants) {
+            log.info("Chat {} participant: User ID {}, Username: {}", 
+                    message.getChatId(), p.getUser().getId(), p.getUser().getUsername());
+        }
+
+        Map<String, Object> messageData = Map.of(
+                "type", "NEW_MESSAGE",
+                "data", message,
+                "timestamp", LocalDateTime.now()
+        );
+        
+        // Log the message data being sent
+        log.info("WebSocket message payload: {}", messageData);
+
+        // FIXED: Send to ALL participants regardless of online status
+        // This ensures WebSocket messages are sent even if user session tracking is broken
+        for (ChatParticipant participant : participants) {
+            Long userId = participant.getUser().getId();
+            String destination = "/queue/messages";
             
-            // Get all participants of the chat
-            List<ChatParticipant> participants = participantRepository
-                    .findByChatIdAndActive(message.getChatId());
-
-            log.info("Found {} participants for chat {}", participants.size(), message.getChatId());
-
-            Map<String, Object> messageData = Map.of(
-                    "type", "NEW_MESSAGE",
-                    "data", message,
-                    "timestamp", LocalDateTime.now()
-            );
-
-            // Send to each participant (including the sender for real-time updates)
-            for (ChatParticipant participant : participants) {
-                Long userId = participant.getUser().getId();
-                if (isUserOnline(userId)) {
-                    log.info("Sending message {} to online user {}", message.getId(), userId);
+            log.info("🔥 SENDING: User {}, Destination: /user/{}{}", 
+                    userId, userId, destination);
+            
+            // ALWAYS send, don't check online status
+            try {
+                // Try sending by user ID (as string)
+                log.info("🔥 ATTEMPTING: Send to user ID '{}' at destination '{}'", userId.toString(), destination);
+                messagingTemplate.convertAndSendToUser(
+                        userId.toString(),
+                        destination,
+                        messageData
+                );
+                log.info("✅ SUCCESS: Message {} sent to user {} at /user/{}{}", 
+                        message.getId(), userId, userId, destination);
+                
+                // ALSO try sending by email (since WebSocket auth uses email as principal)
+                try {
+                    String userEmail = participant.getUser().getEmail();
+                    log.info("🔥 ALSO ATTEMPTING: Send to user email '{}' at destination '{}'", userEmail, destination);
                     messagingTemplate.convertAndSendToUser(
-                            userId.toString(),
-                            "/queue/messages",
+                            userEmail,
+                            destination,
                             messageData
                     );
-                } else {
-                    log.info("User {} is offline, not sending message {}", userId, message.getId());
+                    log.info("✅ SUCCESS: Message {} also sent to email {} at /user/{}{}", 
+                            message.getId(), userEmail, userEmail, destination);
+                } catch (Exception emailEx) {
+                    log.error("❌ FAILED: Message {} to email {} at /user/{}{}: {}", 
+                            message.getId(), participant.getUser().getEmail(), participant.getUser().getEmail(), destination, emailEx.getMessage());
                 }
+                
+            } catch (Exception e) {
+                log.error("❌ FAILED: Message {} to user {} at /user/{}{}: {}", 
+                        message.getId(), userId, userId, destination, e.getMessage());
+                e.printStackTrace();
             }
-
-            log.info("Completed broadcasting message {} to {} participants",
-                    message.getId(), participants.size());
-
-        } catch (Exception e) {
-            log.error("Error broadcasting message", e);
         }
-    }
 
+        log.info("Completed broadcasting message {} to {} participants",
+                message.getId(), participants.size());
+
+    } catch (Exception e) {
+        log.error("Error broadcasting message", e);
+        e.printStackTrace();
+    }
+}
     /**
      * Broadcast message update (edit/pin)
      */

@@ -39,11 +39,13 @@ public class Comment {
 
     // Child replies
     @OneToMany(mappedBy = "parentComment", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @org.hibernate.annotations.BatchSize(size = 20)
     @Builder.Default
     private List<Comment> replies = new ArrayList<>();
 
     // Comment likes
     @OneToMany(mappedBy = "comment", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @org.hibernate.annotations.BatchSize(size = 20)
     @Builder.Default
     private List<CommentLike> likes = new ArrayList<>();
 

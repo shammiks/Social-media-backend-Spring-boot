@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface LikeRepository extends JpaRepository<Like, Long> {
@@ -20,4 +21,11 @@ public interface LikeRepository extends JpaRepository<Like, Long> {
     Optional<Like> findByPostAndUser(Post post, User user);
     long countByPost(Post post);
     void deleteByUserAndPost(User user, Post post);
+
+    // BATCH QUERIES TO ELIMINATE N+1 PROBLEMS
+    @Query("SELECT l.post.id FROM Like l WHERE l.post IN :posts AND l.user.email = :userEmail")
+    List<Long> findLikedPostIdsByUserEmail(@Param("posts") List<Post> posts, @Param("userEmail") String userEmail);
+
+    @Query("SELECT l.post.id, COUNT(l) FROM Like l WHERE l.post IN :posts GROUP BY l.post.id")
+    List<Object[]> countLikesByPosts(@Param("posts") List<Post> posts);
 }

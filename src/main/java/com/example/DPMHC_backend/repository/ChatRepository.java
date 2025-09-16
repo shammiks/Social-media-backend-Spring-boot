@@ -74,4 +74,49 @@ public interface ChatRepository extends JpaRepository<Chat, Long> {
             "AND m.createdAt > COALESCE(p.lastSeenAt, c.createdAt) " +
             "AND m.sender.id != :userId")
     Long countUnreadChatsForUser(@Param("userId") Long userId);
+
+    // OPTIMIZED JOIN FETCH QUERIES TO ELIMINATE N+1 PROBLEMS
+    
+    // Find chats with participants and their users loaded
+    @Query("SELECT DISTINCT c FROM Chat c " +
+            "JOIN FETCH c.participants p " +
+            "JOIN FETCH p.user " +
+            "WHERE p.user.id = :userId AND p.isActive = true AND c.isActive = true " +
+            "ORDER BY c.lastMessageAt DESC")
+    List<Chat> findChatsByUserIdWithParticipants(@Param("userId") Long userId);
+
+    // Find chat with participants loaded
+    @Query("SELECT c FROM Chat c " +
+            "JOIN FETCH c.participants p " +
+            "JOIN FETCH p.user " +
+            "WHERE c.id = :chatId AND c.isActive = true")
+    Optional<Chat> findChatByIdWithParticipants(@Param("chatId") Long chatId);
+
+    // Find private chat with all participants loaded
+    @Query("SELECT c FROM Chat c " +
+            "JOIN FETCH c.participants p " +
+            "JOIN FETCH p.user " +
+            "WHERE c.chatType = 'PRIVATE' " +
+            "AND c.id IN (" +
+            "    SELECT c2.id FROM Chat c2 " +
+            "    JOIN c2.participants p1 " +
+            "    JOIN c2.participants p2 " +
+            "    WHERE c2.chatType = 'PRIVATE' " +
+            "    AND p1.user.id = :user1Id AND p1.isActive = true " +
+            "    AND p2.user.id = :user2Id AND p2.isActive = true " +
+            "    AND c2.isActive = true" +
+            ")")
+    Optional<Chat> findPrivateChatBetweenUsersWithParticipants(@Param("user1Id") Long user1Id, @Param("user2Id") Long user2Id);
+
+    // PROJECTION QUERIES FOR LIGHTWEIGHT CHAT LISTS
+    @Query("SELECT c.id as id, c.chatName as chatName, c.chatType as chatType, " +
+           "c.chatImageUrl as chatImageUrl, c.lastMessageAt as lastMessageAt, c.createdAt as createdAt, " +
+           "m.content as lastMessageContent, u.username as lastMessageSender " +
+           "FROM Chat c " +
+           "JOIN c.participants p " +
+           "LEFT JOIN Message m ON m.chat = c AND m.createdAt = c.lastMessageAt AND m.isDeleted = false " +
+           "LEFT JOIN m.sender u " +
+           "WHERE p.user.id = :userId AND p.isActive = true AND c.isActive = true " +
+           "ORDER BY c.lastMessageAt DESC")
+    List<com.example.DPMHC_backend.dto.projection.ChatListProjection> findChatListProjectionByUserId(@Param("userId") Long userId);
 }

@@ -10,21 +10,42 @@
     <div id="notifications"></div>
 
     <script>
-        // WebSocket connection for real-time notifications
-        const socket = new SockJS('http://localhost:8080/ws/notifications');
-        const stompClient = Stomp.over(socket);
+        // WebSocket connection for real-time notifications with JWT authentication
+        function connectWithAuth() {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                console.error('❌ No JWT token found. Please login first.');
+                return;
+            }
+            
+            // Include JWT token as query parameter for SockJS compatibility
+            const socket = new SockJS(`http://localhost:8080/ws/notifications?token=${encodeURIComponent(token)}`);
+            const stompClient = Stomp.over(socket);
+            
+            return stompClient;
+        }
+        
+        const stompClient = connectWithAuth();
+        if (!stompClient) {
+            document.getElementById('notifications').innerHTML = '<p style="color: red;">⚠️ Please login to receive notifications</p>';
+        }
 
-        stompClient.connect({}, function(frame) {
-            console.log('Connected: ' + frame);
+        if (stompClient) {
+            stompClient.connect({}, function(frame) {
+                console.log('✅ WebSocket Connected with JWT authentication: ' + frame);
 
-            // Subscribe to user-specific notifications
-            // Replace USER_ID with actual user ID
-            const userId = 'USER_ID';
-            stompClient.subscribe('/topic/notifications/' + userId, function(notification) {
-                const notificationData = JSON.parse(notification.body);
-                displayNotification(notificationData);
+                // Subscribe to user-specific notifications
+                // Replace USER_ID with actual user ID
+                const userId = 'USER_ID';
+                stompClient.subscribe('/topic/notifications/' + userId, function(notification) {
+                    const notificationData = JSON.parse(notification.body);
+                    displayNotification(notificationData);
+                });
+            }, function(error) {
+                console.error('❌ WebSocket Connection failed:', error);
+                document.getElementById('notifications').innerHTML = '<p style="color: red;">Connection failed. Please check your authentication token.</p>';
             });
-        });
+        }
 
         function displayNotification(notification) {
             const notificationsDiv = document.getElementById('notifications');

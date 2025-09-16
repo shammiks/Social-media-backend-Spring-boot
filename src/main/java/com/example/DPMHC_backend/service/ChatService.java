@@ -9,9 +9,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.time.LocalDateTime;
-import java.util.ArrayList;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.CacheEvict;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -31,6 +30,7 @@ public class ChatService {
     /**
      * Create a new chat
      */
+    @CacheEvict(value = {"userChats", "userChatsList"}, allEntries = true)
     public ChatDTO createChat(ChatCreateRequestDTO request, Long creatorId) {
         log.info("Creating new chat for user: {}", creatorId);
 
@@ -90,6 +90,7 @@ public class ChatService {
      * Get user's chats with pagination
      */
     @Transactional(readOnly = true)
+    @Cacheable(value = "userChats", key = "#userId + '_' + #pageable.pageNumber + '_' + #pageable.pageSize")
     public Page<ChatDTO> getUserChats(Long userId, Pageable pageable) {
         Page<Chat> chats = chatRepository.findChatsByUserId(userId, pageable);
         return chats.map(chat -> convertToChatDTO(chat, userId));
@@ -99,6 +100,7 @@ public class ChatService {
      * Get user's chats as list
      */
     @Transactional(readOnly = true)
+    @Cacheable(value = "userChatsList", key = "#userId")
     public List<ChatDTO> getUserChatsList(Long userId) {
         List<Chat> chats = chatRepository.findChatsByUserId(userId);
         return chats.stream()
@@ -110,6 +112,7 @@ public class ChatService {
      * Get specific chat by ID
      */
     @Transactional(readOnly = true)
+    @Cacheable(value = "chatById", key = "#chatId + '_' + #userId")
     public ChatDTO getChatById(Long chatId, Long userId) {
         Chat chat = chatRepository.findById(chatId)
                 .orElseThrow(() -> new RuntimeException("Chat not found"));

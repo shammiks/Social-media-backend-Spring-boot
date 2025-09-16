@@ -18,6 +18,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 @Component
 @RequiredArgsConstructor
@@ -32,54 +33,57 @@ public class WebSocketJwtInterceptor implements ChannelInterceptor {
         StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
         
         if (accessor != null && StompCommand.CONNECT.equals(accessor.getCommand())) {
-            log.info("WebSocket CONNECT intercepted");
+            log.info("🔥🔥🔥 WebSocket CONNECT intercepted 🔥🔥🔥");
             
-            // Extract Authorization header
-            List<String> authHeader = accessor.getNativeHeader("Authorization");
-            if (authHeader != null && !authHeader.isEmpty()) {
-                String authHeaderValue = authHeader.get(0);
-                log.info("Found Authorization header: {}", authHeaderValue);
+            // Get user information from WebSocket session attributes (set during handshake)
+            Map<String, Object> sessionAttributes = accessor.getSessionAttributes();
+            if (sessionAttributes != null) {
+                User user = (User) sessionAttributes.get("user");
+                Long userId = (Long) sessionAttributes.get("userId");
+                String userEmail = (String) sessionAttributes.get("userEmail");
                 
-                if (authHeaderValue.startsWith("Bearer ")) {
-                    String token = authHeaderValue.substring(7);
-                    log.info("Extracted JWT token for WebSocket authentication");
+                if (user != null) {
+                    log.info("Found user from WebSocket session: {} (ID: {})", user.getEmail(), user.getId());
                     
-                    try {
-                        // Validate and extract user from JWT
-                        String userEmail = jwtService.extractEmail(token);
-                        log.info("Extracted email from JWT: {}", userEmail);
+                    // CRITICAL FIX: Create authentication with user ID as the principal name
+                    // This ensures Spring STOMP can properly route messages to the user
+                    Authentication auth = new UsernamePasswordAuthenticationToken(
+                        user.getId().toString(), // Use user ID as principal name for message routing
+                        null,
+                        Collections.singletonList(new SimpleGrantedAuthority("ROLE_USER"))
+                    );
+                    
+                    // Set user authentication in STOMP session
+                    accessor.setUser(auth);
+                    log.info("🔥 WebSocket authentication set for user: {} (ID: {})", user.getEmail(), user.getId());
+                    log.info("🔥 Authentication object: {}", auth);
+                    log.info("🔥 Principal NAME: {}", auth.getName());
+                    log.info("🔥 Principal OBJECT: {}", auth.getPrincipal());
+                } else if (userId != null && userEmail != null) {
+                    // Handle temporary authentication case (for testing)
+                    log.info("Using temporary authentication for testing: {} (ID: {})", userEmail, userId);
+                    
+                    // Load user from database using repository
+                    User tempUser = userRepository.findByEmail(userEmail).orElse(null);
+                    if (tempUser != null) {
+                        // CRITICAL FIX: Use user ID as principal name for temporary auth too
+                        Authentication auth = new UsernamePasswordAuthenticationToken(
+                            tempUser.getId().toString(), // Use user ID as principal name
+                            null,
+                            Collections.singletonList(new SimpleGrantedAuthority("ROLE_USER"))
+                        );
                         
-                        if (!jwtService.isTokenExpired(token)) {
-                            log.info("JWT token is valid");
-                            
-                            // Load user from database
-                            User user = userRepository.findByEmail(userEmail)
-                                .orElseThrow(() -> new RuntimeException("User not found: " + userEmail));
-                            
-                            log.info("Loaded user from database: {}", user.getEmail());
-                            
-                            // Create authentication with User object as principal
-                            Authentication auth = new UsernamePasswordAuthenticationToken(
-                                user,
-                                null,
-                                Collections.singletonList(new SimpleGrantedAuthority("ROLE_USER"))
-                            );
-                            
-                            // Set user authentication in WebSocket session
-                            accessor.setUser(auth);
-                            log.info("WebSocket authentication set for user: {} (ID: {})", user.getEmail(), user.getId());
-                            
-                        } else {
-                            log.warn("Expired JWT token for WebSocket connection");
-                        }
-                    } catch (Exception e) {
-                        log.error("Error processing JWT token for WebSocket", e);
+                        accessor.setUser(auth);
+                        log.info("🔥 WebSocket temporary authentication set for user: {} (ID: {})", tempUser.getEmail(), tempUser.getId());
+                        log.info("🔥 Temporary auth Principal NAME: {}", auth.getName());
+                    } else {
+                        log.warn("Could not find user in database for temporary authentication");
                     }
                 } else {
-                    log.warn("Authorization header does not start with 'Bearer '");
+                    log.warn("No user found in WebSocket session attributes");
                 }
             } else {
-                log.warn("No Authorization header found in WebSocket CONNECT");
+                log.warn("No session attributes found in WebSocket CONNECT");
             }
         }
         
