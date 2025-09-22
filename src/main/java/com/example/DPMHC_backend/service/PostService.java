@@ -1,11 +1,15 @@
 package com.example.DPMHC_backend.service;
 
+import com.example.DPMHC_backend.config.database.DatabaseContextHolder;
+import com.example.DPMHC_backend.config.database.annotation.ReadOnlyDB;
+import com.example.DPMHC_backend.config.database.annotation.WriteDB;
 import com.example.DPMHC_backend.dto.PostDTO;
 import com.example.DPMHC_backend.model.*;
 import com.example.DPMHC_backend.repository.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -35,9 +39,12 @@ public class PostService {
     private final NotificationService notificationService; // Add notification service
 
     // CREATE POST
+    @WriteDB(type = WriteDB.OperationType.CREATE)
     @Transactional
     public Post createPost(String content, MultipartFile image, MultipartFile video,
                            MultipartFile pdf, boolean isPublic, String userEmail) {
+        // Set user context for routing
+        DatabaseContextHolder.setUserContext(userEmail);
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
@@ -73,36 +80,48 @@ public class PostService {
 
             String filename = UUID.randomUUID() + "_" + file.getOriginalFilename();
             Files.copy(file.getInputStream(), uploadPath.resolve(filename));
-            return "/" + uploadDir + "/" + filename;
+            return "/uploads/" + filename;
         } catch (Exception e) {
             throw new RuntimeException("Failed to store file", e);
         }
     }
 
-    // GET POSTS
+    // OPTIMIZED: GET POSTS - Public feed with single query (eliminates N+1 for users)
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.ROUND_ROBIN)
     @Transactional(readOnly = true)
     public Page<PostDTO> getAllPosts(Pageable pageable, String currentUserEmail) {
-        return postRepository.findAll(pageable)
+        return postRepository.findAllWithUser(pageable)
                 .map(post -> mapToDTO(post, currentUserEmail));
     }
 
+    // OPTIMIZED: Get post by ID with user data in single query
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.ROUND_ROBIN)
+    @Transactional(readOnly = true)
     public Post getPostById(Long postId) {
-        return postRepository.findById(postId)
+        return postRepository.findByIdWithUser(postId)
                 .orElseThrow(() -> new RuntimeException("Post not found with id: " + postId));
     }
 
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true)
     @Transactional(readOnly = true)
     public Page<PostDTO> getPostsByUser(Long userId, Pageable pageable, String currentUserEmail) {
+        // Set user context for consistent routing
+        DatabaseContextHolder.setUserContext(currentUserEmail);
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        return postRepository.findByUser(user, pageable)
+        // OPTIMIZED: Use optimized query with user data pre-fetched
+        return postRepository.findByUserWithUser(user, pageable)
                 .map(post -> mapToDTO(post, currentUserEmail));
     }
 
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true, fallbackToMaster = true)
     @Transactional(readOnly = true)
     public PostDTO getPost(Long id, String currentUserEmail) {
-        Post post = postRepository.findById(id)
+        // Set user context for consistent routing
+        DatabaseContextHolder.setUserContext(currentUserEmail);
+        // OPTIMIZED: Use optimized query with user data pre-fetched
+        Post post = postRepository.findByIdWithUser(id)
                 .orElseThrow(() -> new RuntimeException("Post not found"));
 
         if (!post.isPublic() && !post.getUser().getEmail().equals(currentUserEmail)) {
@@ -113,6 +132,7 @@ public class PostService {
     }
 
     // UPDATE/DELETE POSTS
+    @WriteDB(type = WriteDB.OperationType.UPDATE)
     @Transactional
     public void updatePost(Long postId, Post updatedPost, String currentUserEmail) {
         Post post = postRepository.findById(postId)
@@ -132,8 +152,10 @@ public class PostService {
         postRepository.save(post);
     }
 
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true)
     @Transactional(readOnly = true)
     public boolean hasUserLikedPost(Long postId, String userEmail) {
+        DatabaseContextHolder.setUserContext(userEmail);
         if (userEmail == null) {
             return false; // Anonymous users haven't liked anything
         }
@@ -147,8 +169,10 @@ public class PostService {
         return likeRepository.existsByUserAndPost(user, post);
     }
 
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true)
     @Transactional(readOnly = true)
     public List<PostDTO> getUserPosts(String userEmail, String currentUserEmail) {
+        DatabaseContextHolder.setUserContext(userEmail);
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
@@ -157,6 +181,7 @@ public class PostService {
                 .toList();
     }
 
+    @WriteDB(type = WriteDB.OperationType.DELETE)
     @Transactional
     public void deletePost(Long postId, String currentUserEmail) {
         Post post = postRepository.findById(postId)
@@ -174,7 +199,8 @@ public class PostService {
 
         postRepository.deleteById(postId);
     }
-    // LIKES
+    // LIKES - Social media interactions, write to master
+    @WriteDB(type = WriteDB.OperationType.UPDATE)
     @Transactional
     public LikeResponse toggleLike(Long postId, String userEmail) {
         Post post = postRepository.findById(postId)
@@ -234,6 +260,8 @@ public class PostService {
         .profileImageUrl(post.getUser().getProfileImageUrl())
         .build();
     }
+
+
 
     @Data
     @AllArgsConstructor

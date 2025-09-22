@@ -1,4 +1,8 @@
 package com.example.DPMHC_backend.service;
+
+import com.example.DPMHC_backend.config.database.DatabaseContextHolder;
+import com.example.DPMHC_backend.config.database.annotation.ReadOnlyDB;
+import com.example.DPMHC_backend.config.database.annotation.WriteDB;
 import com.example.DPMHC_backend.dto.LoginResponse;
 import com.example.DPMHC_backend.dto.PostDTO;
 import com.example.DPMHC_backend.model.PasswordResetToken;
@@ -61,6 +65,8 @@ public class UserService {
         }
     }
 
+    @WriteDB(type = WriteDB.OperationType.CREATE)
+    @Transactional
     public String register(User user) {
         validateEmailDomain(user.getEmail());
         // Check if username is null and handle it
@@ -90,6 +96,7 @@ public class UserService {
         user.setPassword(passwordEncoder.encode(user.getPassword()));
         user.setRole(Role.USER);
         user.setBanned(false);
+    user.setAdmin(false); // Ensure isAdmin is always set for new users
         user.setCreatedAt(new Date());
         user.setUpdatedAt(new Date());
         user.setEmailVerified(false);
@@ -113,6 +120,8 @@ public class UserService {
     }
 
 
+    @WriteDB(type = WriteDB.OperationType.UPDATE)
+    @Transactional
     public String verifyEmail(String token) {
         VerificationToken verificationToken = tokenRepository.findByToken(token)
                 .orElseThrow(() -> new RuntimeException("Invalid token"));
@@ -130,7 +139,11 @@ public class UserService {
     }
 
 
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true, fallbackToMaster = true)
+    @Transactional(readOnly = true)
     public String login(String email, String password) {
+        // Set user context for routing
+        DatabaseContextHolder.setUserContext(email);
         Optional<User> optionalUser = userRepository.findByEmail(email);
         if (optionalUser.isEmpty()) {
             throw new RuntimeException("User not found");
@@ -156,7 +169,11 @@ public class UserService {
     /**
      * Login with refresh token support
      */
+    @WriteDB(type = WriteDB.OperationType.CREATE)
+    @Transactional
     public LoginResponse loginWithRefreshToken(String email, String password) {
+        // Set user context for routing
+        DatabaseContextHolder.setUserContext(email);
         Optional<User> optionalUser = userRepository.findByEmail(email);
         if (optionalUser.isEmpty()) {
             throw new RuntimeException("User not found");
@@ -188,6 +205,7 @@ public class UserService {
         return new LoginResponse(accessToken, refreshToken.getToken(), expiresIn);
     }
 
+    @WriteDB(type = WriteDB.OperationType.CREATE)
     @Transactional
     public String sendPasswordResetCode(String email) {
         User user = userRepository.findByEmail(email)
@@ -218,7 +236,10 @@ public class UserService {
         return "Reset code sent to your email";
     }
 
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true, fallbackToMaster = true)
+    @Transactional(readOnly = true)
     public boolean verifyResetCode(String email, String code) {
+        DatabaseContextHolder.setUserContext(email);
         try {
             User user = userRepository.findByEmail(email)
                     .orElseThrow(() -> new RuntimeException("No user found with this email"));
@@ -241,6 +262,7 @@ public class UserService {
         }
     }
 
+    @WriteDB(type = WriteDB.OperationType.UPDATE, critical = true)
     @Transactional
     public String resetPasswordWithCode(String email, String code, String newPassword) {
         User user = userRepository.findByEmail(email)
@@ -265,18 +287,26 @@ public class UserService {
 
 
 
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true)
+    @Transactional(readOnly = true)
     public UserDTO getUserByEmail(String email) {
+        DatabaseContextHolder.setUserContext(email);
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
         return mapToDTO(user);
     }
 
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true)
+    @Transactional(readOnly = true)
     public User getUserEntityByEmail(String email) {
+        DatabaseContextHolder.setUserContext(email);
         return userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
     }
 
+    @WriteDB(type = WriteDB.OperationType.UPDATE)
+    @Transactional
     public UserDTO updateAvatar(MultipartFile file, String email) throws IOException {
         User user = userRepository.findByEmail(email).orElseThrow(() -> new UsernameNotFoundException("User not found"));
         String imageUrl = cloudinaryService.uploadFile(file, "avatars");
@@ -285,6 +315,7 @@ public class UserService {
         return mapToDTO(user);
     }
 
+    @WriteDB(type = WriteDB.OperationType.UPDATE)
     @Transactional
     public UserDTO updateBio(String bio, String email) {
         User user = userRepository.findByEmail(email)
@@ -301,6 +332,7 @@ public class UserService {
         return mapToDTO(user);
     }
 
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true)
     @Transactional(readOnly = true)
     public Page<PostDTO> getPostsByUser(Long userId, Pageable pageable, String currentUserEmail) {
         User user = userRepository.findById(userId)
@@ -351,6 +383,7 @@ public class UserService {
     /**
      * Get user by ID with blocking context
      */
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.ROUND_ROBIN)
     public User getUserById(Long userId) {
         return userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
@@ -359,6 +392,7 @@ public class UserService {
     /**
      * Check if user exists
      */
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.ROUND_ROBIN)
     public boolean userExists(Long userId) {
         return userRepository.existsById(userId);
     }
@@ -366,6 +400,7 @@ public class UserService {
     /**
      * Generate new access token from refresh token
      */
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true, fallbackToMaster = true)
     public String generateNewAccessToken(String refreshToken) {
         RefreshToken storedRefreshToken = refreshTokenService.findByToken(refreshToken)
                 .orElseThrow(() -> new RuntimeException("Refresh token not found"));

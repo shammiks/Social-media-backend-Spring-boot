@@ -101,6 +101,10 @@ public class AuthController {
             }
 
             User currentUser = (User) authentication.getPrincipal();
+            System.out.println("🔍 AuthController /me - User ID: " + currentUser.getId());
+            System.out.println("🔍 AuthController /me - User isAdmin(): " + currentUser.isAdmin());
+            System.out.println("🔍 AuthController /me - User role: " + currentUser.getRole());
+            
             UserDTO userDTO = UserDTO.builder()
                     .id(currentUser.getId())
                     .username(currentUser.getUsername())
@@ -109,6 +113,8 @@ public class AuthController {
                     .bio(currentUser.getBio())
                     .isAdmin(currentUser.isAdmin())
                     .build();
+            
+            System.out.println("🔍 AuthController /me - UserDTO isAdmin: " + userDTO.isAdmin());
 
             return ResponseEntity.ok(userDTO);
         } catch (ClassCastException e) {

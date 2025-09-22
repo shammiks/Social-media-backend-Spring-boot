@@ -38,4 +38,10 @@ public interface BookmarkRepository extends JpaRepository<Bookmark, Long> {
 
     @Query("SELECT b FROM Bookmark b JOIN FETCH b.post p JOIN FETCH p.user WHERE b.user = :user ORDER BY b.createdAt DESC")
     Page<Bookmark> findByUserWithPostDetailsOrderByCreatedAtDesc(@Param("user") User user, Pageable pageable);
+    
+    // ======================= BATCH OPTIMIZED QUERIES =======================
+    
+    // Batch query to check which posts user has bookmarked
+    @Query("SELECT b.post.id FROM Bookmark b WHERE b.post.id IN :postIds AND b.user.email = :userEmail")
+    List<Long> getBookmarkedPostIdsByUser(@Param("postIds") List<Long> postIds, @Param("userEmail") String userEmail);
 }

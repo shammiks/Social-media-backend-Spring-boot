@@ -1,5 +1,7 @@
 package com.example.DPMHC_backend.service;
 
+import com.example.DPMHC_backend.config.database.annotation.ReadOnlyDB;
+import com.example.DPMHC_backend.config.database.annotation.WriteDB;
 import com.example.DPMHC_backend.dto.NotificationDTO;
 import com.example.DPMHC_backend.model.*;
 import com.example.DPMHC_backend.repository.CommentRepository;
@@ -35,6 +37,7 @@ public class NotificationService {
 
     // ======================== ENHANCED NOTIFICATION STATE MANAGEMENT ========================
 
+    @WriteDB(type = WriteDB.OperationType.UPDATE)
     @Transactional
     public NotificationDTO markAsReadAndReturn(Long notificationId, String userEmail) {
         log.debug("Marking notification {} as read for user {}", notificationId, userEmail);
@@ -58,6 +61,7 @@ public class NotificationService {
         return convertToDTO(notification);
     }
 
+    @WriteDB(type = WriteDB.OperationType.UPDATE)
     @Transactional
     public NotificationDTO markAsUnreadAndReturn(Long notificationId, String userEmail) {
         log.debug("Marking notification {} as unread for user {}", notificationId, userEmail);
@@ -81,6 +85,7 @@ public class NotificationService {
         return convertToDTO(notification);
     }
 
+    @WriteDB(type = WriteDB.OperationType.UPDATE)
     @Transactional
     public NotificationDTO markAsSeenAndReturn(Long notificationId, String userEmail) {
         log.debug("Marking notification {} as seen for user {}", notificationId, userEmail);
@@ -104,6 +109,7 @@ public class NotificationService {
         return convertToDTO(notification);
     }
 
+    @WriteDB(type = WriteDB.OperationType.DELETE)
     @Transactional
     public void deleteNotificationForUser(Long notificationId, String userEmail) {
         log.debug("Deleting notification {} for user {}", notificationId, userEmail);
@@ -123,6 +129,7 @@ public class NotificationService {
         sendNotificationDeletionUpdate(notification);
     }
 
+    @WriteDB(type = WriteDB.OperationType.UPDATE)
     @Transactional
     public int markMultipleAsReadForUser(List<Long> notificationIds, String userEmail) {
         log.debug("Marking {} notifications as read for user {}", notificationIds.size(), userEmail);
@@ -281,6 +288,7 @@ public class NotificationService {
 
     // ======================== CORE NOTIFICATION OPERATIONS ========================
 
+    @WriteDB(type = WriteDB.OperationType.CREATE)
     @Transactional
     @Async
     public void createNotification(NotificationBuilder builder) {
@@ -314,6 +322,7 @@ public class NotificationService {
         }
     }
 
+    @WriteDB(type = WriteDB.OperationType.CREATE)
     @Transactional
     @Async
     public void createNotification(Long recipientId, Long actorId, NotificationType type,
@@ -376,6 +385,7 @@ public class NotificationService {
 
     // ======================== QUERYING AND FILTERING ========================
 
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true)
     public Page<NotificationDTO> getNotifications(String email, Pageable pageable) {
         log.debug("Fetching notifications for user: {}, page: {}, size: {}",
                 email, pageable.getPageNumber(), pageable.getPageSize());
@@ -389,6 +399,7 @@ public class NotificationService {
         return notifications.map(this::convertToDTO);
     }
 
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true)
     public Page<NotificationDTO> getUnreadNotifications(String email, Pageable pageable) {
         User user = getUserByEmail(email);
         Page<Notification> notifications = notificationRepository
@@ -396,6 +407,7 @@ public class NotificationService {
         return notifications.map(this::convertToDTO);
     }
 
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true)
     public Page<NotificationDTO> getNotificationsByType(String email, NotificationType type, Pageable pageable) {
         User user = getUserByEmail(email);
         Page<Notification> notifications = notificationRepository
@@ -403,6 +415,7 @@ public class NotificationService {
         return notifications.map(this::convertToDTO);
     }
 
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true)
     public Page<NotificationDTO> getNotificationsByTypes(String email, List<NotificationType> types, Pageable pageable) {
         User user = getUserByEmail(email);
         Page<Notification> notifications = notificationRepository

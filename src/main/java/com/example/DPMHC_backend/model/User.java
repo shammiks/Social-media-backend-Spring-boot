@@ -9,7 +9,13 @@ import java.util.HashSet;
 import java.util.Set;
 
 @Entity
-@Table(name = "users")
+@Table(name = "users", indexes = {
+    @Index(name = "idx_user_email", columnList = "email", unique = true),
+    @Index(name = "idx_user_username", columnList = "username", unique = true),
+    @Index(name = "idx_user_banned", columnList = "banned"),
+    @Index(name = "idx_user_admin", columnList = "isAdmin"),
+    @Index(name = "idx_user_created_at", columnList = "created_at")
+})
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -26,6 +32,7 @@ public class User {
 
     private String email;
 
+    @Column(name = "verification_token")
     private String verificationToken;
     private boolean isEmailVerified = false;
 
@@ -50,11 +57,13 @@ public class User {
     @ManyToMany(mappedBy = "likedBy")
     private Set<Post> likedPosts = new HashSet<>();
 
+    @Column(name = "isAdmin", nullable = false, columnDefinition = "BIT DEFAULT 0")
+    private boolean isAdmin = false;
 
-    private boolean isAdmin;
-
+    @Column(name = "created_at")
     private Date createdAt;
 
+    @Column(name = "updated_at")
     private Date updatedAt;
 
     @Override

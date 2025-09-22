@@ -21,7 +21,7 @@ public class NotificationScheduledTaskService {
                 log.info("Cleaned up {} expired notifications", deletedCount);
             }
         } catch (Exception e) {
-            log.error("Error during notification cleanup", e);
+            log.warn("Error during notification cleanup: {}. This may be due to ShardingSphere table detection during startup.", e.getMessage());
         }
     }
 

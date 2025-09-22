@@ -1,4 +1,8 @@
 package com.example.DPMHC_backend.service;
+
+import com.example.DPMHC_backend.config.database.DatabaseContextHolder;
+import com.example.DPMHC_backend.config.database.annotation.ReadOnlyDB;
+import com.example.DPMHC_backend.config.database.annotation.WriteDB;
 import com.example.DPMHC_backend.dto.*;
 import com.example.DPMHC_backend.model.*;
 import com.example.DPMHC_backend.repository.*;
@@ -34,6 +38,7 @@ public class MessageService {
     /**
      * Send a new message
      */
+    @WriteDB(type = WriteDB.OperationType.CREATE)
     @Transactional
     public MessageDTO sendMessage(MessageSendRequestDTO request, Long userId) {
         // Debug logging to see what's being received
@@ -138,8 +143,10 @@ public class MessageService {
     /**
      * Get messages in a chat with pagination
      */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true)
+    @Transactional(readOnly = true, propagation = Propagation.REQUIRES_NEW)
     public Page<MessageDTO> getChatMessages(Long chatId, Long userId, Pageable pageable) {
+        DatabaseContextHolder.setUserContext(userId.toString());
         // Verify user is participant
         if (!chatRepository.isUserParticipantOfChat(chatId, userId)) {
             throw new RuntimeException("User is not a participant of this chat");
@@ -164,8 +171,10 @@ public class MessageService {
     /**
      * Get message by ID
      */
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true)
     @Transactional(readOnly = true)
     public MessageDTO getMessageById(Long messageId, Long userId) {
+        DatabaseContextHolder.setUserContext(userId.toString());
         Message message = messageRepository.findById(messageId)
                 .orElseThrow(() -> new RuntimeException("Message not found"));
 
@@ -180,6 +189,8 @@ public class MessageService {
     /**
      * Edit a message
      */
+    @WriteDB(type = WriteDB.OperationType.UPDATE)
+    @Transactional
     public MessageDTO editMessage(Long messageId, String newContent, Long userId) {
         Message message = messageRepository.findById(messageId)
                 .orElseThrow(() -> new RuntimeException("Message not found"));
@@ -210,6 +221,8 @@ public class MessageService {
     /**
      * Delete a message (soft delete)
      */
+    @WriteDB(type = WriteDB.OperationType.DELETE)
+    @Transactional
     public void deleteMessage(Long messageId, Long userId) {
         Message message = messageRepository.findById(messageId)
                 .orElseThrow(() -> new RuntimeException("Message not found"));
@@ -232,6 +245,7 @@ public class MessageService {
     /**
      * Pin/Unpin a message (user-specific)
      */
+    @WriteDB(type = WriteDB.OperationType.UPDATE)
     public MessageDTO togglePinMessage(Long messageId, Long userId) {
         Message message = messageRepository.findById(messageId)
                 .orElseThrow(() -> new RuntimeException("Message not found"));
@@ -271,6 +285,7 @@ public class MessageService {
     /**
      * Add emoji reaction to message
      */
+    @WriteDB(type = WriteDB.OperationType.UPDATE)
     public MessageDTO addReaction(Long messageId, ReactionRequestDTO request, Long userId) {
         Message message = messageRepository.findById(messageId)
                 .orElseThrow(() -> new RuntimeException("Message not found"));
@@ -307,6 +322,7 @@ public class MessageService {
     /**
      * Mark message as read
      */
+    @WriteDB(type = WriteDB.OperationType.UPDATE)
     public void markAsRead(Long messageId, Long userId) {
         markAsReadForUser(messageId, userId);
 
@@ -358,6 +374,7 @@ public class MessageService {
     /**
      * Search messages in a chat
      */
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true)
     @Transactional(readOnly = true)
     public Page<MessageDTO> searchMessages(Long chatId, String searchTerm, Long userId, Pageable pageable) {
         // Verify user is participant
@@ -372,6 +389,7 @@ public class MessageService {
     /**
      * Get pinned messages in a chat (user-specific)
      */
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true)
     @Transactional(readOnly = true)
     public List<MessageDTO> getPinnedMessages(Long chatId, Long userId) {
         // Verify user is participant
@@ -388,6 +406,7 @@ public class MessageService {
     /**
      * Get media messages in a chat
      */
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true)
     @Transactional(readOnly = true)
     public Page<MessageDTO> getMediaMessages(Long chatId, Long userId, Pageable pageable) {
         // Verify user is participant

@@ -1,5 +1,7 @@
 package com.example.DPMHC_backend.service;
 
+import com.example.DPMHC_backend.config.database.annotation.ReadOnlyDB;
+import com.example.DPMHC_backend.config.database.annotation.WriteDB;
 import com.example.DPMHC_backend.model.Like;
 import com.example.DPMHC_backend.model.Post;
 import com.example.DPMHC_backend.model.User;
@@ -17,6 +19,7 @@ public class LikeService {
     private final PostRepository postRepository;
     private final UserRepository userRepository;
 
+    @WriteDB(type = WriteDB.OperationType.UPDATE)
     public void toggleLike(Long postId, String email) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
@@ -31,6 +34,7 @@ public class LikeService {
         }
     }
 
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.ROUND_ROBIN)
     public long getLikeCount(Long postId) {
         Post post = postRepository.findById(postId)
                 .orElseThrow(() -> new RuntimeException("Post not found"));

@@ -10,7 +10,27 @@ import java.util.List;
 import java.util.Set;
 
 @Entity
-@Table(name = "posts")
+@Table(name = "posts", indexes = {
+    @Index(name = "idx_post_created_at", columnList = "createdAt"),
+    @Index(name = "idx_post_user_id", columnList = "user_id"),
+    @Index(name = "idx_post_public_created", columnList = "isPublic, createdAt"),
+    @Index(name = "idx_post_reported", columnList = "reported")
+})
+@NamedEntityGraph(
+    name = "Post.withUser",
+    attributeNodes = @NamedAttributeNode("user")
+)
+@NamedEntityGraph(
+    name = "Post.withUserAndComments",
+    attributeNodes = {
+        @NamedAttributeNode("user"),
+        @NamedAttributeNode(value = "comments", subgraph = "comments.user")
+    },
+    subgraphs = @NamedSubgraph(
+        name = "comments.user",
+        attributeNodes = @NamedAttributeNode("user")
+    )
+)
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

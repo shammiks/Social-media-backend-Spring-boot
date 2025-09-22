@@ -1,9 +1,12 @@
 package com.example.DPMHC_backend.controller;
 
+import com.example.DPMHC_backend.config.database.annotation.ReadOnlyDB;
+import com.example.DPMHC_backend.config.database.annotation.WriteDB;
 import com.example.DPMHC_backend.dto.PostDTO;
 import com.example.DPMHC_backend.model.Post;
 import com.example.DPMHC_backend.model.User;
 import com.example.DPMHC_backend.service.PostService;
+import com.example.DPMHC_backend.service.PostBatchService;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import com.example.DPMHC_backend.service.NotificationService;
@@ -24,6 +27,8 @@ public class PostController {
 
     private final PostService postService;
     private final NotificationService notificationService;
+    // Add optimized batch service
+    private final PostBatchService postBatchService;
 
     @PostMapping("/upload")
     public ResponseEntity<PostDTO> createPost(
@@ -48,8 +53,15 @@ public class PostController {
         return ResponseEntity.ok(postService.mapToDTO(created, user.getEmail()));
     }
 
+    // OPTIMIZED: Use batch service to eliminate N+1 problems (reduces queries from N+4 to 4 total)
     @GetMapping
     public Page<PostDTO> getAllPosts(Pageable pageable, @AuthenticationPrincipal User user) {
+        return postBatchService.getOptimizedPostsWithMetadata(pageable, user.getEmail());
+    }
+    
+    // Legacy endpoint (keep for backward compatibility)
+    @GetMapping("/legacy")
+    public Page<PostDTO> getAllPostsLegacy(Pageable pageable, @AuthenticationPrincipal User user) {
         return postService.getAllPosts(pageable, user.getEmail());
     }
 

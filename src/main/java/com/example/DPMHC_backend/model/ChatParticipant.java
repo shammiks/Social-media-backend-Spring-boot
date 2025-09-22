@@ -9,7 +9,12 @@ import org.hibernate.annotations.CreationTimestamp;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "chat_participants")
+@Table(name = "chat_participants", indexes = {
+    @Index(name = "idx_chat_participant_user_active", columnList = "user_id, is_active"),
+    @Index(name = "idx_chat_participant_chat_active", columnList = "chat_id, is_active"),
+    @Index(name = "idx_chat_participant_role", columnList = "chat_id, role, is_active"),
+    @Index(name = "idx_chat_participant_last_seen", columnList = "user_id, last_seen_at")
+})
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

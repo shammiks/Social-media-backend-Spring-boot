@@ -109,4 +109,36 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
                                    @Param("entityType") String entityType,
                                    @Param("actor") User actor);
 
+    // ======================= OPTIMIZED BATCH CLEANUP QUERIES =======================
+    
+    /**
+     * OPTIMIZED: Batch delete expired notifications with LIMIT
+     */
+    @Modifying
+    @Query(value = "DELETE FROM notifications WHERE expires_at IS NOT NULL AND expires_at < :expiryDate LIMIT :batchSize", 
+           nativeQuery = true)
+    int deleteExpiredNotificationsBatch(@Param("expiryDate") Date expiryDate, 
+                                       @Param("batchSize") int batchSize);
+    
+    /**
+     * OPTIMIZED: Batch delete old read notifications
+     */
+    @Modifying
+    @Query(value = "DELETE FROM notifications WHERE is_read = true AND read_at < :readBefore LIMIT :batchSize", 
+           nativeQuery = true)
+    int deleteOldReadNotificationsBatch(@Param("readBefore") Date readBefore, 
+                                       @Param("batchSize") int batchSize);
+    
+    /**
+     * Count expired notifications for monitoring
+     */
+    @Query("SELECT COUNT(n) FROM Notification n WHERE n.expiresAt IS NOT NULL AND n.expiresAt < :now")
+    long countExpiredNotifications(@Param("now") Date now);
+    
+    /**
+     * Count old read notifications for monitoring
+     */
+    @Query("SELECT COUNT(n) FROM Notification n WHERE n.isRead = true AND n.readAt < :readBefore")
+    long countOldReadNotifications(@Param("readBefore") Date readBefore);
+
 }

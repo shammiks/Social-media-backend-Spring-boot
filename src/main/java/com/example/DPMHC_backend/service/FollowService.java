@@ -1,5 +1,8 @@
 package com.example.DPMHC_backend.service;
 
+import com.example.DPMHC_backend.config.database.DatabaseContextHolder;
+import com.example.DPMHC_backend.config.database.annotation.ReadOnlyDB;
+import com.example.DPMHC_backend.config.database.annotation.WriteDB;
 import com.example.DPMHC_backend.dto.FollowDTO;
 import com.example.DPMHC_backend.dto.FollowStatusDTO;
 import com.example.DPMHC_backend.dto.UserDTO;
@@ -32,6 +35,7 @@ public class FollowService {
 
     // ========== ENHANCED CORE FOLLOW OPERATIONS ==========
 
+    @WriteDB(type = WriteDB.OperationType.UPDATE)
     @Transactional
     @CacheEvict(value = "followStatus", key = "{#followerId, #followeeId}")
     public FollowStatusDTO toggleFollow(Long followerId, Long followeeId) {
@@ -56,6 +60,7 @@ public class FollowService {
         return result;
     }
 
+    @WriteDB(type = WriteDB.OperationType.CREATE)
     @Transactional
     @CacheEvict(value = "followStatus", key = "{#followerId, #followeeId}")
     public FollowStatusDTO followUser(Long followerId, Long followeeId) {
@@ -99,6 +104,7 @@ public class FollowService {
         return result;
     }
 
+    @WriteDB(type = WriteDB.OperationType.DELETE)
     @Transactional
     @CacheEvict(value = "followStatus", key = "{#followerId, #followeeId}")
     public FollowStatusDTO unfollowUser(Long followerId, Long followeeId) {
@@ -137,9 +143,11 @@ public class FollowService {
 
     // ========== READ OPERATIONS ==========
 
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true)
     @Transactional(readOnly = true)
     @Cacheable(value = "followStatus", key = "{#followerId, #followeeId}")
     public FollowStatusDTO getFollowStatus(Long followerId, Long followeeId) {
+        DatabaseContextHolder.setUserContext(followerId.toString());
         log.info("Get follow status: follower={}, followee={}", followerId, followeeId);
 
         if (followerId.equals(followeeId)) {
@@ -165,26 +173,32 @@ public class FollowService {
         return result;
     }
 
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true)
     @Transactional(readOnly = true)
     public Page<UserDTO> getFollowers(Long userId, Pageable pageable) {
+        DatabaseContextHolder.setUserContext(userId.toString());
         return followRepository.findByFolloweeId(userId, pageable)
                 .map(this::convertFollowToUserDTO);
     }
 
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true)
     @Transactional(readOnly = true)
     public Page<UserDTO> getFollowing(Long userId, Pageable pageable) {
+        DatabaseContextHolder.setUserContext(userId.toString());
         return followRepository.findByFollowerId(userId, pageable)
                 .map(this::convertFollowingToUserDTO);
     }
 
     // ========== COUNT METHODS ==========
 
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true)
     @Transactional(readOnly = true)
     @Cacheable(value = "followerCount", key = "#userId")
     public long countFollowers(Long userId) {
         return followRepository.countByFolloweeId(userId);
     }
 
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true)
     @Transactional(readOnly = true)
     @Cacheable(value = "followingCount", key = "#userId")
     public long countFollowing(Long userId) {

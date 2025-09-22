@@ -6,9 +6,17 @@ import lombok.*;
 import java.util.Date;
 
 @Entity
-@Table(name = "bookmarks", uniqueConstraints = {
+@Table(name = "bookmarks", 
+    uniqueConstraints = {
         @UniqueConstraint(columnNames = {"user_id", "post_id"})
-})
+    },
+    indexes = {
+        @Index(name = "idx_bookmark_user_id", columnList = "user_id"),
+        @Index(name = "idx_bookmark_post_id", columnList = "post_id"),
+        @Index(name = "idx_bookmark_created_at", columnList = "createdAt"),
+        @Index(name = "idx_bookmark_user_created", columnList = "user_id, createdAt")
+    }
+)
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

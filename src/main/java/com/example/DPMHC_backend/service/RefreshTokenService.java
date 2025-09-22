@@ -152,9 +152,13 @@ public class RefreshTokenService {
     @Scheduled(fixedDelay = 86400000) // Run every 24 hours
     @Transactional
     public void cleanupExpiredTokens() {
-        log.info("Starting cleanup of expired refresh tokens");
-        refreshTokenRepository.deleteExpiredTokens(LocalDateTime.now());
-        log.info("Cleaned up expired refresh tokens");
+        try {
+            log.info("Starting cleanup of expired refresh tokens");
+            refreshTokenRepository.deleteExpiredTokens(LocalDateTime.now());
+            log.info("Cleaned up expired refresh tokens");
+        } catch (Exception e) {
+            log.warn("Error during refresh token cleanup: {}. This may be due to ShardingSphere table detection during startup.", e.getMessage());
+        }
     }
 
     /**

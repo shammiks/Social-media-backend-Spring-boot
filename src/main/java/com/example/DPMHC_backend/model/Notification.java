@@ -9,7 +9,10 @@ import java.util.Date;
 @Table(name = "notifications", indexes = {
     @Index(name = "idx_user_created", columnList = "user_id, created_at"),
     @Index(name = "idx_user_read", columnList = "user_id, is_read"),
-    @Index(name = "idx_type", columnList = "type")
+    @Index(name = "idx_user_seen_read", columnList = "user_id, is_seen, is_read"),
+    @Index(name = "idx_type", columnList = "type"),
+    @Index(name = "idx_expires_cleanup", columnList = "expires_at"),
+    @Index(name = "idx_notification_counts", columnList = "user_id, is_read, is_seen")
 })
 @Getter
 @Setter

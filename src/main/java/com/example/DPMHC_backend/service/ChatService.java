@@ -1,5 +1,7 @@
 package com.example.DPMHC_backend.service;
 
+import com.example.DPMHC_backend.config.database.annotation.ReadOnlyDB;
+import com.example.DPMHC_backend.config.database.annotation.WriteDB;
 import com.example.DPMHC_backend.dto.*;
 import com.example.DPMHC_backend.model.*;
 import com.example.DPMHC_backend.repository.*;
@@ -31,6 +33,7 @@ public class ChatService {
     /**
      * Create a new chat
      */
+    @WriteDB(type = WriteDB.OperationType.CREATE)
     public ChatDTO createChat(ChatCreateRequestDTO request, Long creatorId) {
         log.info("Creating new chat for user: {}", creatorId);
 
@@ -89,6 +92,7 @@ public class ChatService {
     /**
      * Get user's chats with pagination
      */
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true)
     @Transactional(readOnly = true)
     public Page<ChatDTO> getUserChats(Long userId, Pageable pageable) {
         Page<Chat> chats = chatRepository.findChatsByUserId(userId, pageable);
@@ -98,6 +102,7 @@ public class ChatService {
     /**
      * Get user's chats as list
      */
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true)
     @Transactional(readOnly = true)
     public List<ChatDTO> getUserChatsList(Long userId) {
         List<Chat> chats = chatRepository.findChatsByUserId(userId);
@@ -109,6 +114,7 @@ public class ChatService {
     /**
      * Get specific chat by ID
      */
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true)
     @Transactional(readOnly = true)
     public ChatDTO getChatById(Long chatId, Long userId) {
         Chat chat = chatRepository.findById(chatId)

@@ -1,5 +1,8 @@
 package com.example.DPMHC_backend.service;
 
+import com.example.DPMHC_backend.config.database.DatabaseContextHolder;
+import com.example.DPMHC_backend.config.database.annotation.ReadOnlyDB;
+import com.example.DPMHC_backend.config.database.annotation.WriteDB;
 import com.example.DPMHC_backend.dto.CommentDTO;
 import com.example.DPMHC_backend.model.Comment;
 import com.example.DPMHC_backend.model.CommentLike;
@@ -31,6 +34,7 @@ public class CommentService {
     private final CommentLikeRepository commentLikeRepository;
     private final NotificationService notificationService; // Add notification service
 
+    @WriteDB(type = WriteDB.OperationType.CREATE)
     @Transactional
     public Comment addComment(Long postId, String content, String userEmail) {
         User user = userRepository.findByEmail(userEmail)
@@ -54,6 +58,7 @@ public class CommentService {
         return savedComment;
     }
 
+    @WriteDB(type = WriteDB.OperationType.UPDATE)
     @Transactional
     public Comment editComment(Long commentId, String content, String userEmail) {
         Comment comment = commentRepository.findById(commentId)
@@ -69,6 +74,8 @@ public class CommentService {
         return commentRepository.save(comment);
     }
 
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.ROUND_ROBIN)
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public Page<CommentDTO> getComments(Long postId, Pageable pageable) {
         // Only get top-level comments (no parent), replies will be fetched separately
         return commentRepository.findByPostIdAndParentCommentIsNullOrderByCreatedAtDesc(postId, pageable)
@@ -78,12 +85,17 @@ public class CommentService {
                     return mapToDTO(comment, null, true);
                 });
     }
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.ROUND_ROBIN)
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public Comment getCommentById(Long commentId) {
         return commentRepository.findById(commentId)
                 .orElseThrow(() -> new RuntimeException("Comment not found with id: " + commentId));
     }
 
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true)
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public Page<CommentDTO> getCommentsWithUser(Long postId, Pageable pageable, String userEmail) {
+        DatabaseContextHolder.setUserContext(userEmail);
         final User currentUser = userEmail != null ?
             userRepository.findByEmail(userEmail).orElse(null) : null;
 
@@ -91,6 +103,8 @@ public class CommentService {
                 .map(comment -> mapToDTO(comment, currentUser, true));
     }
 
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.ROUND_ROBIN)
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public List<CommentDTO> getCommentsByPost(Long postId) {
         Post post = postRepository.findById(postId)
                 .orElseThrow(() -> new RuntimeException("Post not found"));
@@ -100,6 +114,8 @@ public class CommentService {
                 .toList();
     }
 
+    @WriteDB(type = WriteDB.OperationType.DELETE)
+    @Transactional
     public void deleteComment(Long commentId, String userEmail) {
         Comment comment = commentRepository.findById(commentId)
                 .orElseThrow(() -> new RuntimeException("Comment not found"));
@@ -111,6 +127,7 @@ public class CommentService {
         commentRepository.delete(comment);
     }
 
+    @WriteDB(type = WriteDB.OperationType.CREATE)
     @Transactional
     public Comment addReply(Long parentCommentId, String content, String userEmail) {
         User user = userRepository.findByEmail(userEmail)
@@ -136,6 +153,7 @@ public class CommentService {
         return savedReply;
     }
 
+    @WriteDB(type = WriteDB.OperationType.UPDATE)
     @Transactional
     public boolean toggleCommentLike(Long commentId, String userEmail) {
         User user = userRepository.findByEmail(userEmail)
@@ -164,7 +182,10 @@ public class CommentService {
         }
     }
 
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true)
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public List<CommentDTO> getReplies(Long parentCommentId, String currentUserEmail) {
+        DatabaseContextHolder.setUserContext(currentUserEmail);
         Comment parentComment = commentRepository.findById(parentCommentId)
                 .orElseThrow(() -> new RuntimeException("Parent comment not found"));
 

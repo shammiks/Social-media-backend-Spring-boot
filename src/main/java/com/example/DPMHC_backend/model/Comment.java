@@ -10,7 +10,13 @@ import java.util.Date;
 import java.util.List;
 
 @Entity
-@Table(name = "comments")
+@Table(name = "comments", indexes = {
+    @Index(name = "idx_comment_post_id", columnList = "post_id"),
+    @Index(name = "idx_comment_user_id", columnList = "user_id"),
+    @Index(name = "idx_comment_parent_id", columnList = "parent_comment_id"),
+    @Index(name = "idx_comment_created_at", columnList = "created_at"),
+    @Index(name = "idx_comment_post_parent", columnList = "post_id, parent_comment_id")
+})
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

@@ -1,5 +1,7 @@
 package com.example.DPMHC_backend.service;
 
+import com.example.DPMHC_backend.config.database.annotation.ReadOnlyDB;
+import com.example.DPMHC_backend.config.database.annotation.WriteDB;
 import com.example.DPMHC_backend.dto.PostDTO;
 import com.example.DPMHC_backend.model.Bookmark;
 import com.example.DPMHC_backend.model.Post;
@@ -28,6 +30,7 @@ public class BookmarkService {
     private final UserRepository userRepository;
     private final PostService postService; // To reuse mapToDTO method
 
+    @WriteDB(type = WriteDB.OperationType.UPDATE)
     @Transactional
     public BookmarkResponse toggleBookmark(Long postId, String userEmail) {
         Post post = postRepository.findById(postId)
@@ -54,6 +57,7 @@ public class BookmarkService {
         return new BookmarkResponse(isBookmarked);
     }
 
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true)
     @Transactional(readOnly = true)
     public boolean isPostBookmarkedByUser(Long postId, String userEmail) {
         Post post = postRepository.findById(postId)
@@ -64,6 +68,7 @@ public class BookmarkService {
         return bookmarkRepository.existsByUserAndPost(user, post);
     }
 
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true)
     @Transactional(readOnly = true)
     public List<PostDTO> getUserBookmarks(String userEmail) {
         User user = userRepository.findByEmail(userEmail)
@@ -77,6 +82,7 @@ public class BookmarkService {
     }
 
 
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true)
     @Transactional(readOnly = true)
     public Page<PostDTO> getUserBookmarks(String userEmail, Pageable pageable) {
         User user = userRepository.findByEmail(userEmail)
