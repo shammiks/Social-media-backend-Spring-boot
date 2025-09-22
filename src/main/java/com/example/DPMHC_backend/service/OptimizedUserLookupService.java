@@ -9,10 +9,6 @@ import org.springframework.stereotype.Service;
 
 import java.util.Optional;
 
-/**
- * Optimized User lookup service with caching to reduce database calls
- * Addresses the 150-680ms findByEmail query performance issue
- */
 @Service
 @RequiredArgsConstructor
 @Slf4j

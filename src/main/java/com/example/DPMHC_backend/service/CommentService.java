@@ -14,6 +14,10 @@ import com.example.DPMHC_backend.repository.PostRepository;
 import com.example.DPMHC_backend.repository.UserRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -26,6 +30,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class CommentService {
 
     private final CommentRepository commentRepository;
@@ -36,7 +41,13 @@ public class CommentService {
 
     @WriteDB(type = WriteDB.OperationType.CREATE)
     @Transactional
+    @Caching(evict = {
+        @CacheEvict(value = "post-comments", key = "#postId + ':*'", allEntries = false),
+        @CacheEvict(value = "comment-counts", key = "#postId"),
+        @CacheEvict(value = "posts", key = "#postId") // Evict post cache as comment count changed
+    })
     public Comment addComment(Long postId, String content, String userEmail) {
+        log.debug("💬 Adding comment to post {} by user {}", postId, userEmail);
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
@@ -60,7 +71,13 @@ public class CommentService {
 
     @WriteDB(type = WriteDB.OperationType.UPDATE)
     @Transactional
+    @Caching(evict = {
+        @CacheEvict(value = "post-comments", key = "#result.post.id + ':*'", allEntries = false),
+        @CacheEvict(value = "comment-replies", key = "#result.parentComment?.id + ':*'", allEntries = false)
+    })
     public Comment editComment(Long commentId, String content, String userEmail) {
+        log.debug("✏️ Editing comment {} by user {}", commentId, userEmail);
+        
         Comment comment = commentRepository.findById(commentId)
                 .orElseThrow(() -> new RuntimeException("Comment not found"));
 
@@ -70,20 +87,30 @@ public class CommentService {
 
         comment.setContent(content);
         comment.setUpdatedAt(new Date());
-
-        return commentRepository.save(comment);
+        Comment savedComment = commentRepository.save(comment);
+        
+        log.debug("✅ Comment {} edited successfully", commentId);
+        return savedComment;
     }
 
     @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.ROUND_ROBIN)
     @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    @Cacheable(value = "post-comments", key = "#postId + ':page:' + #pageable.pageNumber + ':size:' + #pageable.pageSize", 
+               condition = "#pageable.pageNumber == 0") // Only cache first page
     public Page<CommentDTO> getComments(Long postId, Pageable pageable) {
+        log.debug("📖 Getting comments for post {} (page: {}, size: {})", 
+                 postId, pageable.getPageNumber(), pageable.getPageSize());
+        
         // Only get top-level comments (no parent), replies will be fetched separately
-        return commentRepository.findByPostIdAndParentCommentIsNullOrderByCreatedAtDesc(postId, pageable)
+        Page<CommentDTO> comments = commentRepository.findByPostIdAndParentCommentIsNullOrderByCreatedAtDesc(postId, pageable)
                 .map(comment -> {
                     // For public API, we'll use null user context for now
                     // In the future, this could be improved to get current user from security context
                     return mapToDTO(comment, null, true);
                 });
+        
+        log.debug("✅ Retrieved {} comments for post {}", comments.getContent().size(), postId);
+        return comments;
     }
     @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.ROUND_ROBIN)
     @org.springframework.transaction.annotation.Transactional(readOnly = true)
@@ -105,18 +132,48 @@ public class CommentService {
 
     @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.ROUND_ROBIN)
     @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    @Cacheable(value = "post-comments", key = "#postId + ':all'")
     public List<CommentDTO> getCommentsByPost(Long postId) {
+        log.debug("📝 Getting all comments for post {}", postId);
+        
         Post post = postRepository.findById(postId)
                 .orElseThrow(() -> new RuntimeException("Post not found"));
 
-        return commentRepository.findAllByPost(post).stream()
+        List<CommentDTO> comments = commentRepository.findAllByPost(post).stream()
                 .map(comment -> mapToDTO(comment, null, true))
                 .toList();
+        
+        log.debug("✅ Retrieved {} total comments for post {}", comments.size(), postId);
+        return comments;
+    }
+
+    /**
+     * Get comment count for a post (cached)
+     */
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.ROUND_ROBIN)
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    @Cacheable(value = "comment-counts", key = "#postId")
+    public long getCommentCount(Long postId) {
+        log.debug("🔢 Getting comment count for post {}", postId);
+        
+        Post post = postRepository.findById(postId)
+                .orElseThrow(() -> new RuntimeException("Post not found"));
+        long count = commentRepository.countByPost(post);
+        log.debug("📊 Post {} has {} comments", postId, count);
+        return count;
     }
 
     @WriteDB(type = WriteDB.OperationType.DELETE)
     @Transactional
-    public void deleteComment(Long commentId, String userEmail) {
+    @Caching(evict = {
+        @CacheEvict(value = "post-comments", key = "#result.post.id + ':*'", allEntries = false),
+        @CacheEvict(value = "comment-counts", key = "#result.post.id"),
+        @CacheEvict(value = "comment-replies", key = "#commentId + ':*'", allEntries = false),
+        @CacheEvict(value = "posts", key = "#result.post.id")
+    })
+    public Comment deleteComment(Long commentId, String userEmail) {
+        log.debug("🗑️ Deleting comment {} by user {}", commentId, userEmail);
+        
         Comment comment = commentRepository.findById(commentId)
                 .orElseThrow(() -> new RuntimeException("Comment not found"));
 
@@ -125,11 +182,21 @@ public class CommentService {
         }
 
         commentRepository.delete(comment);
+        log.debug("✅ Comment {} deleted successfully", commentId);
+        
+        return comment; // Return for cache eviction
     }
 
     @WriteDB(type = WriteDB.OperationType.CREATE)
     @Transactional
+    @Caching(evict = {
+        @CacheEvict(value = "comment-replies", key = "#parentCommentId + ':*'", allEntries = false),
+        @CacheEvict(value = "post-comments", key = "#result.post.id + ':*'", allEntries = false),
+        @CacheEvict(value = "comment-counts", key = "#result.post.id")
+    })
     public Comment addReply(Long parentCommentId, String content, String userEmail) {
+        log.debug("➕ Adding reply to comment {} by user {}", parentCommentId, userEmail);
+        
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
@@ -150,12 +217,16 @@ public class CommentService {
         notificationService.handleCommentReply(parentComment.getUser().getEmail(), userEmail,
                                               parentCommentId, savedReply.getId());
 
+        log.debug("✅ Reply added successfully to comment {}", parentCommentId);
         return savedReply;
     }
 
     @WriteDB(type = WriteDB.OperationType.UPDATE)
     @Transactional
+    @CacheEvict(value = "comment-likes", key = "#commentId + ':*'", allEntries = false)
     public boolean toggleCommentLike(Long commentId, String userEmail) {
+        log.debug("👍 Toggling like for comment {} by user {}", commentId, userEmail);
+        
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
@@ -165,6 +236,7 @@ public class CommentService {
         if (commentLikeRepository.existsByCommentAndUser(comment, user)) {
             // Unlike - remove the like
             commentLikeRepository.deleteByCommentAndUser(comment, user);
+            log.debug("👎 User {} unliked comment {}", userEmail, commentId);
             return false; // unliked
         } else {
             // Like - add the like
@@ -178,13 +250,18 @@ public class CommentService {
             // Trigger notification for comment like
             notificationService.handleCommentLike(comment.getUser().getEmail(), userEmail, commentId);
 
+            log.debug("👍 User {} liked comment {}", userEmail, commentId);
             return true; // liked
         }
     }
 
     @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true)
     @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    @Cacheable(value = "comment-replies", key = "#parentCommentId + ':user:' + (#currentUserEmail ?: 'anonymous')", 
+               unless = "#result == null || #result.isEmpty()")
     public List<CommentDTO> getReplies(Long parentCommentId, String currentUserEmail) {
+        log.debug("📝 Fetching replies for comment {} by user {}", parentCommentId, currentUserEmail);
+        
         DatabaseContextHolder.setUserContext(currentUserEmail);
         Comment parentComment = commentRepository.findById(parentCommentId)
                 .orElseThrow(() -> new RuntimeException("Parent comment not found"));
@@ -192,9 +269,12 @@ public class CommentService {
         final User currentUser = currentUserEmail != null ?
             userRepository.findByEmail(currentUserEmail).orElse(null) : null;
 
-        return parentComment.getReplies().stream()
+        List<CommentDTO> replies = parentComment.getReplies().stream()
                 .map(reply -> mapToDTO(reply, currentUser, false)) // Don't include nested replies
                 .collect(Collectors.toList());
+        
+        log.debug("✅ Retrieved {} replies for comment {}", replies.size(), parentCommentId);
+        return replies;
     }
 
     private static final DateTimeFormatter FORMATTER =

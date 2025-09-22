@@ -35,9 +35,13 @@ public class FollowService {
 
     // ========== ENHANCED CORE FOLLOW OPERATIONS ==========
 
+    /**
+     * Toggle follow with comprehensive cache eviction
+     */
     @WriteDB(type = WriteDB.OperationType.UPDATE)
     @Transactional
-    @CacheEvict(value = "followStatus", key = "{#followerId, #followeeId}")
+    @CacheEvict(value = {"followStatus", "followerCount", "followingCount"}, 
+               key = "{#followerId, #followeeId}")
     public FollowStatusDTO toggleFollow(Long followerId, Long followeeId) {
         log.info("Toggle follow request: follower={}, followee={}", followerId, followeeId);
 

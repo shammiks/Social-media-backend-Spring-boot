@@ -8,6 +8,9 @@ import com.example.DPMHC_backend.model.*;
 import com.example.DPMHC_backend.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -40,6 +43,11 @@ public class MessageService {
      */
     @WriteDB(type = WriteDB.OperationType.CREATE)
     @Transactional
+    @Caching(evict = {
+        @CacheEvict(value = "chat-messages", key = "#request.chatId + ':*'", allEntries = false),
+        @CacheEvict(value = "chat-lists", key = "#userId + ':*'", allEntries = false),
+        @CacheEvict(value = "message-counts", key = "#request.chatId")
+    })
     public MessageDTO sendMessage(MessageSendRequestDTO request, Long userId) {
         // Debug logging to see what's being received
         log.info("Received message send request: {}", request);
@@ -145,7 +153,12 @@ public class MessageService {
      */
     @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true)
     @Transactional(readOnly = true, propagation = Propagation.REQUIRES_NEW)
+    @Cacheable(value = "chat-messages", key = "#chatId + ':page:' + #pageable.pageNumber + ':size:' + #pageable.pageSize + ':user:' + #userId", 
+               unless = "#result == null || #result.isEmpty()")
     public Page<MessageDTO> getChatMessages(Long chatId, Long userId, Pageable pageable) {
+        log.debug("💬 Fetching chat messages for chat {} by user {} (page {}, size {})", 
+                  chatId, userId, pageable.getPageNumber(), pageable.getPageSize());
+        
         DatabaseContextHolder.setUserContext(userId.toString());
         // Verify user is participant
         if (!chatRepository.isUserParticipantOfChat(chatId, userId)) {
@@ -165,7 +178,10 @@ public class MessageService {
                         msg.getId(), msg.getMessageType(), msg.getMediaUrl(), msg.getCreatedAt())
         );
 
-        return messages.map(message -> convertToMessageDTO(message, userId));
+        Page<MessageDTO> result = messages.map(message -> convertToMessageDTO(message, userId));
+        log.debug("✅ Retrieved {} messages for chat {}", result.getContent().size(), chatId);
+        
+        return result;
     }
 
     /**
@@ -173,7 +189,10 @@ public class MessageService {
      */
     @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true)
     @Transactional(readOnly = true)
+    @Cacheable(value = "message-details", key = "#messageId + ':user:' + #userId", unless = "#result == null")
     public MessageDTO getMessageById(Long messageId, Long userId) {
+        log.debug("📩 Fetching message {} by user {}", messageId, userId);
+        
         DatabaseContextHolder.setUserContext(userId.toString());
         Message message = messageRepository.findById(messageId)
                 .orElseThrow(() -> new RuntimeException("Message not found"));
@@ -183,7 +202,10 @@ public class MessageService {
             throw new RuntimeException("User is not a participant of this chat");
         }
 
-        return convertToMessageDTO(message, userId);
+        MessageDTO result = convertToMessageDTO(message, userId);
+        log.debug("✅ Retrieved message {}", messageId);
+        
+        return result;
     }
 
     /**
@@ -191,7 +213,13 @@ public class MessageService {
      */
     @WriteDB(type = WriteDB.OperationType.UPDATE)
     @Transactional
+    @Caching(evict = {
+        @CacheEvict(value = "chat-messages", key = "#result.chat.id + ':*'", allEntries = false),
+        @CacheEvict(value = "message-details", key = "#messageId + ':*'", allEntries = false)
+    })
     public MessageDTO editMessage(Long messageId, String newContent, Long userId) {
+        log.debug("✏️ Editing message {} by user {}", messageId, userId);
+        
         Message message = messageRepository.findById(messageId)
                 .orElseThrow(() -> new RuntimeException("Message not found"));
 
@@ -215,6 +243,7 @@ public class MessageService {
         // Broadcast update
         webSocketService.broadcastMessageUpdate(messageDTO);
 
+        log.debug("✅ Message {} edited successfully", messageId);
         return messageDTO;
     }
 
@@ -223,7 +252,14 @@ public class MessageService {
      */
     @WriteDB(type = WriteDB.OperationType.DELETE)
     @Transactional
-    public void deleteMessage(Long messageId, Long userId) {
+    @Caching(evict = {
+        @CacheEvict(value = "chat-messages", key = "#result.chat.id + ':*'", allEntries = false),
+        @CacheEvict(value = "message-details", key = "#messageId + ':*'", allEntries = false),
+        @CacheEvict(value = "message-counts", key = "#result.chat.id")
+    })
+    public Message deleteMessage(Long messageId, Long userId) {
+        log.debug("🗑️ Deleting message {} by user {}", messageId, userId);
+        
         Message message = messageRepository.findById(messageId)
                 .orElseThrow(() -> new RuntimeException("Message not found"));
 
@@ -236,10 +272,13 @@ public class MessageService {
         }
 
         message.softDelete();
-        messageRepository.save(message);
+        Message deletedMessage = messageRepository.save(message);
 
         // Broadcast deletion
         webSocketService.broadcastMessageDelete(messageId, message.getChat().getId());
+
+        log.debug("✅ Message {} deleted successfully", messageId);
+        return deletedMessage; // Return for cache eviction
     }
 
     /**

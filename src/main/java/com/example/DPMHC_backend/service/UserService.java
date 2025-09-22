@@ -18,6 +18,9 @@ import com.example.DPMHC_backend.security.JwtService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -287,9 +290,14 @@ public class UserService {
 
 
 
+    /**
+     * CACHED: Get user DTO by email with Redis caching (15min TTL)
+     */
     @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true)
     @Transactional(readOnly = true)
+    @Cacheable(value = "userProfiles", key = "#email", unless = "#result == null")
     public UserDTO getUserByEmail(String email) {
+        log.debug("🔍 Cache MISS: Loading UserDTO for email: {}", email);
         DatabaseContextHolder.setUserContext(email);
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
@@ -297,17 +305,31 @@ public class UserService {
         return mapToDTO(user);
     }
 
+    /**
+     * CACHED: Get user entity by email with Redis caching (15min TTL)
+     */
     @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true)
     @Transactional(readOnly = true)
+    @Cacheable(value = "usersByEmail", key = "#email", unless = "#result == null")
     public User getUserEntityByEmail(String email) {
+        log.debug("🔍 Cache MISS: Loading User entity for email: {}", email);
         DatabaseContextHolder.setUserContext(email);
         return userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
     }
 
+    /**
+     * UPDATE: Avatar with cache eviction
+     */
     @WriteDB(type = WriteDB.OperationType.UPDATE)
     @Transactional
+    @Caching(evict = {
+        @CacheEvict(value = "usersByEmail", key = "#email"),
+        @CacheEvict(value = "userProfiles", key = "#email"),
+        @CacheEvict(value = "usersById", key = "#result.id")
+    })
     public UserDTO updateAvatar(MultipartFile file, String email) throws IOException {
+        log.debug("🗑️ Cache EVICT: Clearing user caches for email: {}", email);
         User user = userRepository.findByEmail(email).orElseThrow(() -> new UsernameNotFoundException("User not found"));
         String imageUrl = cloudinaryService.uploadFile(file, "avatars");
         user.setAvatar(imageUrl);
@@ -315,8 +337,16 @@ public class UserService {
         return mapToDTO(user);
     }
 
+    /**
+     * UPDATE: Bio with cache eviction
+     */
     @WriteDB(type = WriteDB.OperationType.UPDATE)
     @Transactional
+    @Caching(evict = {
+        @CacheEvict(value = "usersByEmail", key = "#email"),
+        @CacheEvict(value = "userProfiles", key = "#email"),
+        @CacheEvict(value = "usersById", key = "#result.id")
+    })
     public UserDTO updateBio(String bio, String email) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found"));
@@ -381,11 +411,24 @@ public class UserService {
     }
 
     /**
-     * Get user by ID with blocking context
+     * CACHED: Get user by ID with Redis caching (30min TTL)
      */
     @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.ROUND_ROBIN)
+    @Cacheable(value = "usersById", key = "#userId", unless = "#result == null")
     public User getUserById(Long userId) {
+        log.debug("🔍 Cache MISS: Loading User entity for ID: {}", userId);
         return userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+    }
+
+    /**
+     * CACHED: Get user by username with Redis caching (30min TTL)
+     */
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.ROUND_ROBIN)
+    @Cacheable(value = "usersByUsername", key = "#username", unless = "#result == null")
+    public User getUserByUsername(String username) {
+        log.debug("🔍 Cache MISS: Loading User entity for username: {}", username);
+        return userRepository.findByUsername(username)
                 .orElseThrow(() -> new RuntimeException("User not found"));
     }
 

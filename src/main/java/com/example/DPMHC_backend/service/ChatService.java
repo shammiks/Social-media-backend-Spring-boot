@@ -7,6 +7,8 @@ import com.example.DPMHC_backend.model.*;
 import com.example.DPMHC_backend.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -31,9 +33,10 @@ public class ChatService {
     private final com.example.DPMHC_backend.service.WebSocketService webSocketService;
 
     /**
-     * Create a new chat
+     * Create a new chat with cache eviction for all participants
      */
     @WriteDB(type = WriteDB.OperationType.CREATE)
+    @CacheEvict(value = "chats", key = "'user:' + #creatorId")
     public ChatDTO createChat(ChatCreateRequestDTO request, Long creatorId) {
         log.info("Creating new chat for user: {}", creatorId);
 
@@ -100,11 +103,13 @@ public class ChatService {
     }
 
     /**
-     * Get user's chats as list
+     * CACHED: Get user's chats as list with Redis caching (10min TTL)
      */
     @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true)
     @Transactional(readOnly = true)
+    @Cacheable(value = "chats", key = "'user:' + #userId", unless = "#result == null || #result.empty")
     public List<ChatDTO> getUserChatsList(Long userId) {
+        log.debug("🔍 Cache MISS: Loading chats for user ID: {}", userId);
         List<Chat> chats = chatRepository.findChatsByUserId(userId);
         return chats.stream()
                 .map(chat -> convertToChatDTO(chat, userId))

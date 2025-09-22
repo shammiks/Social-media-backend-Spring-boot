@@ -9,7 +9,11 @@ import com.example.DPMHC_backend.repository.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -28,6 +32,7 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 @Transactional
+@Slf4j
 public class PostService {
 
     private final PostRepository postRepository;
@@ -38,9 +43,12 @@ public class PostService {
     private final RealTimeService realTimeService;
     private final NotificationService notificationService; // Add notification service
 
-    // CREATE POST
+    /**
+     * CREATE POST with cache eviction for user's posts
+     */
     @WriteDB(type = WriteDB.OperationType.CREATE)
     @Transactional
+    @CacheEvict(value = "postsByUser", key = "#result.user.id + '_0_*'")
     public Post createPost(String content, MultipartFile image, MultipartFile video,
                            MultipartFile pdf, boolean isPublic, String userEmail) {
         // Set user context for routing
@@ -87,6 +95,7 @@ public class PostService {
     }
 
     // OPTIMIZED: GET POSTS - Public feed with single query (eliminates N+1 for users)
+    // Note: Not caching paginated results as they change frequently and keys would be complex
     @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.ROUND_ROBIN)
     @Transactional(readOnly = true)
     public Page<PostDTO> getAllPosts(Pageable pageable, String currentUserEmail) {
@@ -94,17 +103,27 @@ public class PostService {
                 .map(post -> mapToDTO(post, currentUserEmail));
     }
 
-    // OPTIMIZED: Get post by ID with user data in single query
+    /**
+     * CACHED: Get post by ID with Redis caching (10min TTL)
+     */
     @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.ROUND_ROBIN)
     @Transactional(readOnly = true)
+    @Cacheable(value = "posts", key = "#postId", unless = "#result == null")
     public Post getPostById(Long postId) {
+        log.debug("🔍 Cache MISS: Loading Post entity for ID: {}", postId);
         return postRepository.findByIdWithUser(postId)
                 .orElseThrow(() -> new RuntimeException("Post not found with id: " + postId));
     }
 
+    /**
+     * CACHED: Get posts by user - cache first page only for performance
+     */
     @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true)
     @Transactional(readOnly = true)
+    @Cacheable(value = "postsByUser", key = "#userId + '_' + #pageable.pageNumber + '_' + #pageable.pageSize", 
+               condition = "#pageable.pageNumber == 0", unless = "#result == null || #result.empty")
     public Page<PostDTO> getPostsByUser(Long userId, Pageable pageable, String currentUserEmail) {
+        log.debug("🔍 Cache MISS: Loading posts for user ID: {}, page: {}", userId, pageable.getPageNumber());
         // Set user context for consistent routing
         DatabaseContextHolder.setUserContext(currentUserEmail);
         User user = userRepository.findById(userId)

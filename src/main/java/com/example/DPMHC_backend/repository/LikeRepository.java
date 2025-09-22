@@ -33,4 +33,8 @@ public interface LikeRepository extends JpaRepository<Like, Long> {
     // Batch query to check if user liked multiple posts
     @Query("SELECT l.post.id FROM Like l WHERE l.post.id IN :postIds AND l.user.email = :userEmail")
     List<Long> getLikedPostIdsByUser(@Param("postIds") List<Long> postIds, @Param("userEmail") String userEmail);
+    
+    // Query to get posts liked by user with pagination
+    @Query("SELECT l.post.id FROM Like l WHERE l.user.id = :userId ORDER BY l.id DESC")
+    List<Long> findPostIdsByUserId(@Param("userId") Long userId);
 }

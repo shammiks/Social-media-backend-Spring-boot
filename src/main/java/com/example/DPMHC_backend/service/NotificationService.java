@@ -11,6 +11,9 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -37,9 +40,19 @@ public class NotificationService {
 
     // ======================== ENHANCED NOTIFICATION STATE MANAGEMENT ========================
 
+    /**
+     * Mark notification as read with cache eviction
+     */
     @WriteDB(type = WriteDB.OperationType.UPDATE)
     @Transactional
+    @Caching(evict = {
+        @CacheEvict(value = "notificationCounts", key = "'unread:' + #userEmail"),
+        @CacheEvict(value = "notificationCounts", key = "'unseen:' + #userEmail"),
+        @CacheEvict(value = "notificationCounts", key = "'byType:' + #userEmail"),
+        @CacheEvict(value = "unreadNotifications", key = "#userEmail")
+    })
     public NotificationDTO markAsReadAndReturn(Long notificationId, String userEmail) {
+        log.debug("🗑️ Cache EVICT: Clearing notification caches for email: {}", userEmail);
         log.debug("Marking notification {} as read for user {}", notificationId, userEmail);
 
         Notification notification = getNotificationById(notificationId);
@@ -440,23 +453,38 @@ public class NotificationService {
         return updatedCount;
     }
 
-    // ======================== STATISTICS AND COUNTS ========================
+    // ======================== CACHED STATISTICS AND COUNTS ========================
 
+    /**
+     * CACHED: Get unread notification count with Redis caching (2min TTL)
+     */
+    @Cacheable(value = "notificationCounts", key = "'unread:' + #email", unless = "#result == null")
     public long getUnreadCount(String email) {
+        log.debug("🔍 Cache MISS: Loading unread count for email: {}", email);
         User user = getUserByEmail(email);
         long count = notificationRepository.countByRecipientAndIsRead(user, false);
         log.debug("Unread count for user {}: {}", email, count);
         return count;
     }
 
+    /**
+     * CACHED: Get unseen notification count with Redis caching (2min TTL)
+     */
+    @Cacheable(value = "notificationCounts", key = "'unseen:' + #email", unless = "#result == null")
     public long getUnseenCount(String email) {
+        log.debug("🔍 Cache MISS: Loading unseen count for email: {}", email);
         User user = getUserByEmail(email);
         long count = notificationRepository.countByRecipientAndIsSeenAndIsRead(user, false, false);
         log.debug("Unseen count for user {}: {}", email, count);
         return count;
     }
 
+    /**
+     * CACHED: Get notification counts by type with Redis caching (2min TTL)
+     */
+    @Cacheable(value = "notificationCounts", key = "'byType:' + #email", unless = "#result == null || #result.empty")
     public Map<NotificationType, Long> getNotificationCountsByType(String email) {
+        log.debug("🔍 Cache MISS: Loading notification counts by type for email: {}", email);
         User user = getUserByEmail(email);
         List<Object[]> results = notificationRepository.getNotificationCountsByType(user);
 

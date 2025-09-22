@@ -8,6 +8,8 @@ import com.example.DPMHC_backend.repository.CommentRepository;
 import com.example.DPMHC_backend.repository.LikeRepository;
 import com.example.DPMHC_backend.repository.PostRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -38,6 +40,7 @@ public class PostBatchService {
      */
     @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.ROUND_ROBIN)
     @Transactional(readOnly = true)
+    @Cacheable(value = "posts", key = "#pageable.pageNumber + '-' + #pageable.pageSize + '-' + #currentUserEmail", condition = "#pageable.pageNumber < 10")
     public Page<PostDTO> getOptimizedPostsWithMetadata(Pageable pageable, String currentUserEmail) {
         // Query 1: Get posts with users (1 query with JOIN FETCH)
         Page<Post> posts = postRepository.findAllWithUser(pageable);
@@ -76,6 +79,7 @@ public class PostBatchService {
      * OPTIMIZED: Get user's posts with batch metadata loading
      */
     @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true)
+    @Cacheable(value = "user-posts", key = "#userId + '-' + #pageable.pageNumber + '-' + #pageable.pageSize + '-' + #currentUserEmail")
     public Page<PostDTO> getOptimizedUserPosts(Long userId, Pageable pageable, String currentUserEmail) {
         // Similar optimization but for user-specific posts
         // Implementation similar to above but using findByUserWithUser
@@ -86,6 +90,7 @@ public class PostBatchService {
      * OPTIMIZED: Get public feed with batch metadata loading
      */
     @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.ROUND_ROBIN)
+    @Cacheable(value = "public-posts", key = "#pageable.pageNumber + '-' + #pageable.pageSize + '-' + #currentUserEmail")
     public Page<PostDTO> getOptimizedPublicFeed(Pageable pageable, String currentUserEmail) {
         // Query 1: Get public posts with users
         Page<Post> posts = postRepository.findPublicPostsWithUser(pageable);
@@ -97,6 +102,24 @@ public class PostBatchService {
         return buildOptimizedPostPage(posts, pageable, currentUserEmail);
     }
     
+    // ======================= CACHE EVICTION METHODS =======================
+    
+    /**
+     * Evict all post-related caches when post data changes
+     */
+    @CacheEvict(value = {"posts", "user-posts", "public-posts", "post-details"}, allEntries = true)
+    public void evictAllPostCaches() {
+        // This method will be called from PostService when posts are created/updated/deleted
+    }
+
+    /**
+     * Evict user-specific post caches
+     */
+    @CacheEvict(value = "user-posts", key = "#userId + '-*'", beforeInvocation = true)
+    public void evictUserPostCaches(Long userId) {
+        // Called when user's posts are modified
+    }
+
     // ======================= PRIVATE HELPER METHODS =======================
     
     private Page<PostDTO> buildOptimizedPostPage(Page<Post> posts, Pageable pageable, String currentUserEmail) {

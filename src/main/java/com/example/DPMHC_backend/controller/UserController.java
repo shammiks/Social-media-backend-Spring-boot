@@ -20,9 +20,7 @@ public class UserController {
 
     @GetMapping("/{userId}")
     public ResponseEntity<UserDTO> getUserById(@PathVariable Long userId) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-
+        User user = userService.getUserById(userId);
         return ResponseEntity.ok(mapToDTO(user));
     }
 
@@ -36,8 +34,7 @@ public class UserController {
 
         User currentUser = (User) authentication.getPrincipal();
 
-        User user = (User) userRepository.findByUsername(username)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+        User user = userService.getUserByUsername(username);
 
         return ResponseEntity.ok(mapToDTO(user));
     }
