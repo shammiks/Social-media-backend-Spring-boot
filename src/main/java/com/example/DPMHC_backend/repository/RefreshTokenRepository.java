@@ -38,7 +38,7 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, Long
      * OPTIMIZED: Batch delete expired tokens with LIMIT to avoid long-running transactions
      */
     @Modifying
-    @Query(value = "DELETE FROM refresh_tokens WHERE expiry_date < :expiryDate LIMIT :batchSize", 
+    @Query(value = "DELETE FROM refresh_tokens WHERE expiryDate < :expiryDate LIMIT :batchSize", 
            nativeQuery = true)
     int deleteExpiredTokensBatch(@Param("expiryDate") LocalDateTime expiryDate, 
                                 @Param("batchSize") int batchSize);
@@ -47,7 +47,7 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, Long
      * OPTIMIZED: Batch delete revoked tokens older than specified date
      */
     @Modifying
-    @Query(value = "DELETE FROM refresh_tokens WHERE is_revoked = true AND revoked_at < :revokedBefore LIMIT :batchSize", 
+    @Query(value = "DELETE FROM refresh_tokens WHERE isRevoked = true AND revokedAt < :revokedBefore LIMIT :batchSize", 
            nativeQuery = true)
     int deleteRevokedTokensBatch(@Param("revokedBefore") LocalDateTime revokedBefore, 
                                 @Param("batchSize") int batchSize);

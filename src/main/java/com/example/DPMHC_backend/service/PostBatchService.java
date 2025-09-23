@@ -2,6 +2,7 @@ package com.example.DPMHC_backend.service;
 
 import com.example.DPMHC_backend.config.database.annotation.ReadOnlyDB;
 import com.example.DPMHC_backend.dto.PostDTO;
+import com.example.DPMHC_backend.dto.cache.PageCacheWrapper;
 import com.example.DPMHC_backend.model.Post;
 import com.example.DPMHC_backend.repository.BookmarkRepository;
 import com.example.DPMHC_backend.repository.CommentRepository;
@@ -9,6 +10,7 @@ import com.example.DPMHC_backend.repository.LikeRepository;
 import com.example.DPMHC_backend.repository.PostRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.CachePut;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -40,8 +42,14 @@ public class PostBatchService {
      */
     @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.ROUND_ROBIN)
     @Transactional(readOnly = true)
-    @Cacheable(value = "posts", key = "#pageable.pageNumber + '-' + #pageable.pageSize + '-' + #currentUserEmail", condition = "#pageable.pageNumber < 10")
     public Page<PostDTO> getOptimizedPostsWithMetadata(Pageable pageable, String currentUserEmail) {
+        // Try to get from cache first using wrapper
+        PageCacheWrapper<PostDTO> cachedWrapper = getCachedPosts(pageable, currentUserEmail);
+        if (cachedWrapper != null) {
+            return cachedWrapper.toPage(pageable);
+        }
+        
+        // Cache miss - fetch from database
         // Query 1: Get posts with users (1 query with JOIN FETCH)
         Page<Post> posts = postRepository.findAllWithUser(pageable);
         
@@ -72,26 +80,85 @@ public class PostBatchService {
                         likeCountMap, commentCountMap, userLikedPosts, userBookmarkedPosts))
                 .collect(Collectors.toList());
         
-        return new PageImpl<>(postDTOs, pageable, posts.getTotalElements());
+        Page<PostDTO> result = new PageImpl<>(postDTOs, pageable, posts.getTotalElements());
+        
+        // Cache the result using wrapper (only cache first 10 pages)
+        if (pageable.getPageNumber() < 10) {
+            cachePosts(pageable, currentUserEmail, result);
+        }
+        
+        return result;
+    }
+    
+    /**
+     * Get cached posts using cache wrapper to avoid Page serialization issues
+     */
+    @Cacheable(value = "posts", key = "#pageable.pageNumber + '-' + #pageable.pageSize + '-' + #currentUserEmail", 
+               condition = "#pageable.pageNumber < 10", unless = "#result == null")
+    public PageCacheWrapper<PostDTO> getCachedPosts(Pageable pageable, String currentUserEmail) {
+        // This method will only be called if cache is empty - return null to indicate cache miss
+        return null;
+    }
+    
+    /**
+     * Cache posts using wrapper to avoid Page serialization issues
+     */
+    @CachePut(value = "posts", key = "#pageable.pageNumber + '-' + #pageable.pageSize + '-' + #currentUserEmail")
+    public PageCacheWrapper<PostDTO> cachePosts(Pageable pageable, String currentUserEmail, Page<PostDTO> page) {
+        return PageCacheWrapper.of(page);
     }
     
     /**
      * OPTIMIZED: Get user's posts with batch metadata loading
      */
     @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true)
-    @Cacheable(value = "user-posts", key = "#userId + '-' + #pageable.pageNumber + '-' + #pageable.pageSize + '-' + #currentUserEmail")
     public Page<PostDTO> getOptimizedUserPosts(Long userId, Pageable pageable, String currentUserEmail) {
+        // Try to get from cache first using wrapper
+        PageCacheWrapper<PostDTO> cachedWrapper = getCachedUserPosts(userId, pageable, currentUserEmail);
+        if (cachedWrapper != null) {
+            return cachedWrapper.toPage(pageable);
+        }
+        
+        // Cache miss - fetch from database
         // Similar optimization but for user-specific posts
         // Implementation similar to above but using findByUserWithUser
-        return getOptimizedPostsWithMetadata(pageable, currentUserEmail); // Placeholder - implement similar pattern
+        Page<PostDTO> result = getOptimizedPostsWithMetadata(pageable, currentUserEmail); // Placeholder - implement similar pattern
+        
+        // Cache the result using wrapper
+        cacheUserPosts(userId, pageable, currentUserEmail, result);
+        
+        return result;
+    }
+    
+    /**
+     * Get cached user posts using cache wrapper to avoid Page serialization issues
+     */
+    @Cacheable(value = "user-posts", key = "#userId + '-' + #pageable.pageNumber + '-' + #pageable.pageSize + '-' + #currentUserEmail", unless = "#result == null")
+    public PageCacheWrapper<PostDTO> getCachedUserPosts(Long userId, Pageable pageable, String currentUserEmail) {
+        // This method will only be called if cache is empty - return null to indicate cache miss
+        return null;
+    }
+    
+    /**
+     * Cache user posts using wrapper to avoid Page serialization issues
+     */
+    @CachePut(value = "user-posts", key = "#userId + '-' + #pageable.pageNumber + '-' + #pageable.pageSize + '-' + #currentUserEmail")
+    public PageCacheWrapper<PostDTO> cacheUserPosts(Long userId, Pageable pageable, String currentUserEmail, Page<PostDTO> page) {
+        return PageCacheWrapper.of(page);
     }
     
     /**
      * OPTIMIZED: Get public feed with batch metadata loading
      */
     @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.ROUND_ROBIN)
-    @Cacheable(value = "public-posts", key = "#pageable.pageNumber + '-' + #pageable.pageSize + '-' + #currentUserEmail")
     public Page<PostDTO> getOptimizedPublicFeed(Pageable pageable, String currentUserEmail) {
+        // Try to get from cache first using wrapper
+        PageCacheWrapper<PostDTO> cachedWrapper = getCachedPublicPosts(pageable, currentUserEmail);
+        if (cachedWrapper != null) {
+            return cachedWrapper.toPage(pageable);
+        }
+        
+        // Cache miss - fetch from database
         // Query 1: Get public posts with users
         Page<Post> posts = postRepository.findPublicPostsWithUser(pageable);
         
@@ -99,7 +166,29 @@ public class PostBatchService {
             return new PageImpl<>(Collections.emptyList(), pageable, 0);
         }
         
-        return buildOptimizedPostPage(posts, pageable, currentUserEmail);
+        Page<PostDTO> result = buildOptimizedPostPage(posts, pageable, currentUserEmail);
+        
+        // Cache the result using wrapper
+        cachePublicPosts(pageable, currentUserEmail, result);
+        
+        return result;
+    }
+    
+    /**
+     * Get cached public posts using cache wrapper to avoid Page serialization issues
+     */
+    @Cacheable(value = "public-posts", key = "#pageable.pageNumber + '-' + #pageable.pageSize + '-' + #currentUserEmail", unless = "#result == null")
+    public PageCacheWrapper<PostDTO> getCachedPublicPosts(Pageable pageable, String currentUserEmail) {
+        // This method will only be called if cache is empty - return null to indicate cache miss
+        return null;
+    }
+    
+    /**
+     * Cache public posts using wrapper to avoid Page serialization issues
+     */
+    @CachePut(value = "public-posts", key = "#pageable.pageNumber + '-' + #pageable.pageSize + '-' + #currentUserEmail")
+    public PageCacheWrapper<PostDTO> cachePublicPosts(Pageable pageable, String currentUserEmail, Page<PostDTO> page) {
+        return PageCacheWrapper.of(page);
     }
     
     // ======================= CACHE EVICTION METHODS =======================

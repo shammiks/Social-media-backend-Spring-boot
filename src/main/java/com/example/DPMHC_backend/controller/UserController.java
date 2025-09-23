@@ -10,6 +10,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/users")
 @RequiredArgsConstructor
@@ -37,6 +39,12 @@ public class UserController {
         User user = userService.getUserByUsername(username);
 
         return ResponseEntity.ok(mapToDTO(user));
+    }
+
+    @GetMapping("/search")
+    public ResponseEntity<List<UserDTO>> searchUsers(@RequestParam String username) {
+        List<UserDTO> users = userService.searchUsersByUsername(username);
+        return ResponseEntity.ok(users);
     }
 
     private UserDTO mapToDTO(User user) {

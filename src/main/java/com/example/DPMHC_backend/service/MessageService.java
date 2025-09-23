@@ -4,16 +4,19 @@ import com.example.DPMHC_backend.config.database.DatabaseContextHolder;
 import com.example.DPMHC_backend.config.database.annotation.ReadOnlyDB;
 import com.example.DPMHC_backend.config.database.annotation.WriteDB;
 import com.example.DPMHC_backend.dto.*;
+import com.example.DPMHC_backend.dto.cache.PageCacheWrapper;
 import com.example.DPMHC_backend.model.*;
 import com.example.DPMHC_backend.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.CachePut;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.cache.annotation.Caching;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -153,35 +156,59 @@ public class MessageService {
      */
     @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true)
     @Transactional(readOnly = true, propagation = Propagation.REQUIRES_NEW)
-    @Cacheable(value = "chat-messages", key = "#chatId + ':page:' + #pageable.pageNumber + ':size:' + #pageable.pageSize + ':user:' + #userId", 
-               unless = "#result == null || #result.isEmpty()")
     public Page<MessageDTO> getChatMessages(Long chatId, Long userId, Pageable pageable) {
         log.debug("💬 Fetching chat messages for chat {} by user {} (page {}, size {})", 
                   chatId, userId, pageable.getPageNumber(), pageable.getPageSize());
         
         DatabaseContextHolder.setUserContext(userId.toString());
+        
+        // Try to get from cache first using wrapper
+        PageCacheWrapper<MessageDTO> cachedWrapper = getCachedMessages(chatId, userId, pageable);
+        if (cachedWrapper != null) {
+            log.debug("🎯 Cache HIT: Retrieved {} messages from cache for chat {}", 
+                     cachedWrapper.getContent().size(), chatId);
+            return cachedWrapper.toPage(pageable);
+        }
+        
+        // Cache miss - fetch from database
+        log.debug("🔍 Cache MISS: Loading messages from database for chat {}", chatId);
+        
         // Verify user is participant
         if (!chatRepository.isUserParticipantOfChat(chatId, userId)) {
             throw new RuntimeException("User is not a participant of this chat");
         }
 
-        // ADD THIS DEBUG LOGGING:
-        log.info("DEBUG: Querying messages for chatId: {}, pageable: {}", chatId, pageable);
-
         Page<Message> messages = messageRepository.findMessagesByChatId(chatId, pageable);
 
-        log.info("DEBUG: Found {} messages, total elements: {}",
+        log.debug("DEBUG: Found {} messages, total elements: {}",
                 messages.getContent().size(), messages.getTotalElements());
 
-        messages.getContent().forEach(msg ->
-                log.info("DEBUG: Message - ID: {}, Type: {}, MediaUrl: {}, CreatedAt: {}",
-                        msg.getId(), msg.getMessageType(), msg.getMediaUrl(), msg.getCreatedAt())
-        );
-
         Page<MessageDTO> result = messages.map(message -> convertToMessageDTO(message, userId));
-        log.debug("✅ Retrieved {} messages for chat {}", result.getContent().size(), chatId);
+        
+        // Cache the result using wrapper
+        cacheMessages(chatId, userId, pageable, result);
+        
+        log.debug("✅ Retrieved {} messages for chat {} and cached", result.getContent().size(), chatId);
         
         return result;
+    }
+    
+    /**
+     * Get cached messages using cache wrapper to avoid Page serialization issues
+     */
+    @Cacheable(value = "chat-messages", key = "#chatId + ':page:' + #pageable.pageNumber + ':size:' + #pageable.pageSize + ':user:' + #userId", 
+               unless = "#result == null")
+    public PageCacheWrapper<MessageDTO> getCachedMessages(Long chatId, Long userId, Pageable pageable) {
+        // This method will only be called if cache is empty - return null to indicate cache miss
+        return null;
+    }
+    
+    /**
+     * Cache messages using wrapper to avoid Page serialization issues
+     */
+    @CachePut(value = "chat-messages", key = "#chatId + ':page:' + #pageable.pageNumber + ':size:' + #pageable.pageSize + ':user:' + #userId")
+    public PageCacheWrapper<MessageDTO> cacheMessages(Long chatId, Long userId, Pageable pageable, Page<MessageDTO> page) {
+        return PageCacheWrapper.of(page);
     }
 
     /**
@@ -359,55 +386,167 @@ public class MessageService {
     }
 
     /**
-     * Mark message as read
+     * Mark message as read with deadlock retry mechanism
      */
     @WriteDB(type = WriteDB.OperationType.UPDATE)
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public void markAsRead(Long messageId, Long userId) {
-        markAsReadForUser(messageId, userId);
+        int maxRetries = 3;
+        int retryCount = 0;
+        
+        while (retryCount < maxRetries) {
+            try {
+                markAsReadWithTransaction(messageId, userId);
+                return; // Success, exit retry loop
+            } catch (Exception e) {
+                retryCount++;
+                
+                // Check if it's a deadlock or lock timeout
+                if (isDeadlockException(e) && retryCount < maxRetries) {
+                    log.warn("Deadlock detected on markAsRead attempt {} for message {} user {}, retrying...", 
+                            retryCount, messageId, userId);
+                    
+                    // Exponential backoff with jitter
+                    try {
+                        long delay = (long) (Math.pow(2, retryCount) * 100 + Math.random() * 100);
+                        Thread.sleep(delay);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw new RuntimeException("Interrupted during deadlock retry", ie);
+                    }
+                } else {
+                    // Re-throw if not a deadlock or max retries reached
+                    throw new RuntimeException("Failed to mark message as read after " + maxRetries + " attempts", e);
+                }
+            }
+        }
+    }
 
-        // Update participant's last seen
+    /**
+     * Internal method for marking message as read with proper transaction boundaries
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW, isolation = Isolation.READ_COMMITTED)
+    private void markAsReadWithTransaction(Long messageId, Long userId) {
+        // Process in specific order to avoid deadlocks: message -> read_status -> participant
+        
+        // 1. First, get the message (shared lock)
         Message message = messageRepository.findById(messageId)
                 .orElseThrow(() -> new RuntimeException("Message not found"));
 
-        ChatParticipant participant = participantRepository
-                .findByChatIdAndUserId(message.getChat().getId(), userId)
-                .orElseThrow(() -> new RuntimeException("Participant not found"));
+        // 2. Update read status with proper locking
+        markAsReadForUserWithLocking(messageId, userId);
 
-        participant.markAsRead(messageId);
-        participantRepository.save(participant);
+        // 3. Update participant's last seen (separate from read status to reduce lock time)
+        updateParticipantLastSeen(message.getChat().getId(), userId, messageId);
 
-        // Broadcast read status update
+        // 4. Broadcast update after successful transaction
         webSocketService.broadcastReadStatusUpdate(message.getChat().getId(), messageId, userId);
     }
 
     /**
-     * Mark all messages in chat as read
+     * Check if exception is related to deadlock
      */
+    private boolean isDeadlockException(Exception e) {
+        String message = e.getMessage();
+        if (message == null) return false;
+        
+        return message.contains("Deadlock found") || 
+               message.contains("Lock wait timeout") ||
+               message.contains("deadlock") ||
+               e.getCause() != null && isDeadlockException((Exception) e.getCause());
+    }
+
+    /**
+     * Mark all messages in chat as read with bulk update optimization
+     */
+    @WriteDB(type = WriteDB.OperationType.UPDATE)
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public void markAllAsRead(Long chatId, Long userId) {
+        int maxRetries = 3;
+        int retryCount = 0;
+        
+        while (retryCount < maxRetries) {
+            try {
+                markAllAsReadWithTransaction(chatId, userId);
+                return; // Success, exit retry loop
+            } catch (Exception e) {
+                retryCount++;
+                
+                if (isDeadlockException(e) && retryCount < maxRetries) {
+                    log.warn("Deadlock detected on markAllAsRead attempt {} for chat {} user {}, retrying...", 
+                            retryCount, chatId, userId);
+                    
+                    try {
+                        long delay = (long) (Math.pow(2, retryCount) * 150 + Math.random() * 100);
+                        Thread.sleep(delay);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw new RuntimeException("Interrupted during deadlock retry", ie);
+                    }
+                } else {
+                    throw new RuntimeException("Failed to mark all messages as read after " + maxRetries + " attempts", e);
+                }
+            }
+        }
+    }
+
+    /**
+     * Internal method for bulk marking messages as read
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW, isolation = Isolation.READ_COMMITTED)
+    private void markAllAsReadWithTransaction(Long chatId, Long userId) {
         // Verify user is participant
         if (!chatRepository.isUserParticipantOfChat(chatId, userId)) {
             throw new RuntimeException("User is not a participant of this chat");
         }
 
-        // Get all unread messages
+        // Process messages in smaller batches to reduce lock time
         List<Message> messages = messageRepository.findMessagesByChatIdOrderByCreatedAt(chatId);
+        List<Message> unreadMessages = messages.stream()
+                .filter(msg -> !msg.getSender().getId().equals(userId))
+                .collect(Collectors.toList());
 
-        for (Message message : messages) {
-            if (!message.getSender().getId().equals(userId)) { // Don't mark own messages
-                markAsReadForUser(message.getId(), userId);
-            }
+        // Process in batches of 20 to reduce lock contention
+        int batchSize = 20;
+        for (int i = 0; i < unreadMessages.size(); i += batchSize) {
+            int endIndex = Math.min(i + batchSize, unreadMessages.size());
+            List<Message> batch = unreadMessages.subList(i, endIndex);
+            
+            processBatchReadStatus(batch, userId);
         }
 
-        // Update participant's last seen to now
+        // Update participant's last seen separately
+        updateParticipantLastSeenForChat(chatId, userId);
+
+        // Broadcast read status update for the entire chat
+        webSocketService.broadcastChatReadUpdate(chatId, userId);
+    }
+
+    /**
+     * Process a batch of messages for read status
+     */
+    private void processBatchReadStatus(List<Message> messages, Long userId) {
+        for (Message message : messages) {
+            try {
+                markAsReadForUserWithLocking(message.getId(), userId);
+            } catch (Exception e) {
+                log.warn("Failed to mark message {} as read for user {}: {}", 
+                        message.getId(), userId, e.getMessage());
+                // Continue with other messages in batch instead of failing entire operation
+            }
+        }
+    }
+
+    /**
+     * Update participant's last seen for the entire chat
+     */
+    private void updateParticipantLastSeenForChat(Long chatId, Long userId) {
         ChatParticipant participant = participantRepository
                 .findByChatIdAndUserId(chatId, userId)
                 .orElseThrow(() -> new RuntimeException("Participant not found"));
 
         participant.updateLastSeen();
         participantRepository.save(participant);
-
-        // Broadcast read status update for the entire chat
-        webSocketService.broadcastChatReadUpdate(chatId, userId);
     }
 
     /**
@@ -471,23 +610,70 @@ public class MessageService {
         }
     }
 
-    private void markAsReadForUser(Long messageId, Long userId) {
-        Optional<MessageReadStatus> readStatus = readStatusRepository
-                .findByMessageIdAndUserId(messageId, userId);
+    /**
+     * Mark message as read with proper locking to prevent deadlocks
+     */
+    private void markAsReadForUserWithLocking(Long messageId, Long userId) {
+        try {
+            // Use UPSERT approach to minimize lock time and avoid race conditions
+            Optional<MessageReadStatus> readStatus = readStatusRepository
+                    .findByMessageIdAndUserId(messageId, userId);
 
-        if (readStatus.isPresent()) {
-            readStatus.get().markAsRead();
-            readStatusRepository.save(readStatus.get());
-        } else {
-            Message message = messageRepository.findById(messageId)
-                    .orElseThrow(() -> new RuntimeException("Message not found"));
-            User user = userRepository.findById(userId)
-                    .orElseThrow(() -> new RuntimeException("User not found"));
+            if (readStatus.isPresent()) {
+                MessageReadStatus status = readStatus.get();
+                if (status.getReadAt() == null) { // Only update if not already read
+                    status.markAsRead();
+                    readStatusRepository.save(status);
+                }
+            } else {
+                // Handle race condition where multiple threads try to create the same record
+                try {
+                    Message message = messageRepository.findById(messageId)
+                            .orElseThrow(() -> new RuntimeException("Message not found"));
+                    User user = userRepository.findById(userId)
+                            .orElseThrow(() -> new RuntimeException("User not found"));
 
-            MessageReadStatus newReadStatus = new MessageReadStatus(message, user);
-            newReadStatus.markAsRead();
-            readStatusRepository.save(newReadStatus);
+                    MessageReadStatus newReadStatus = new MessageReadStatus(message, user);
+                    newReadStatus.markAsRead();
+                    readStatusRepository.save(newReadStatus);
+                } catch (Exception e) {
+                    // Handle unique constraint violation - another thread created the record
+                    if (e.getMessage() != null && e.getMessage().contains("Duplicate entry")) {
+                        // Retry finding the record that was just created
+                        Optional<MessageReadStatus> retryStatus = readStatusRepository
+                                .findByMessageIdAndUserId(messageId, userId);
+                        if (retryStatus.isPresent() && retryStatus.get().getReadAt() == null) {
+                            retryStatus.get().markAsRead();
+                            readStatusRepository.save(retryStatus.get());
+                        }
+                    } else {
+                        throw e;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.error("Error marking message {} as read for user {}: {}", messageId, userId, e.getMessage());
+            throw e;
         }
+    }
+
+    /**
+     * Update participant's last seen status separately to reduce lock contention
+     */
+    private void updateParticipantLastSeen(Long chatId, Long userId, Long messageId) {
+        ChatParticipant participant = participantRepository
+                .findByChatIdAndUserId(chatId, userId)
+                .orElseThrow(() -> new RuntimeException("Participant not found"));
+
+        participant.markAsRead(messageId);
+        participantRepository.save(participant);
+    }
+
+    /**
+     * Legacy method for backward compatibility
+     */
+    private void markAsReadForUser(Long messageId, Long userId) {
+        markAsReadForUserWithLocking(messageId, userId);
     }
 
     private MessageDTO convertToMessageDTO(Message message, Long currentUserId) {

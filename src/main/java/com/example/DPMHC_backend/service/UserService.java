@@ -28,6 +28,9 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import com.example.DPMHC_backend.model.VerificationToken;
 import com.example.DPMHC_backend.repository.VerificationTokenRepository;
+
+import java.util.List;
+import java.util.stream.Collectors;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -295,7 +298,7 @@ public class UserService {
      */
     @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true)
     @Transactional(readOnly = true)
-    @Cacheable(value = "userProfiles", key = "#email", unless = "#result == null")
+    // @Cacheable(value = "userProfiles", key = "#email", unless = "#result == null") // Temporarily disabled due to LinkedHashMap deserialization issue
     public UserDTO getUserByEmail(String email) {
         log.debug("🔍 Cache MISS: Loading UserDTO for email: {}", email);
         DatabaseContextHolder.setUserContext(email);
@@ -307,12 +310,13 @@ public class UserService {
 
     /**
      * CACHED: Get user entity by email with Redis caching (15min TTL)
+     * Note: Temporarily disabled caching to avoid LinkedHashMap serialization issues
      */
     @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true)
     @Transactional(readOnly = true)
-    @Cacheable(value = "usersByEmail", key = "#email", unless = "#result == null")
+    // @Cacheable(value = "usersByEmail", key = "#email", unless = "#result == null")
     public User getUserEntityByEmail(String email) {
-        log.debug("🔍 Cache MISS: Loading User entity for email: {}", email);
+        log.debug("🔍 Loading User entity for email: {}", email);
         DatabaseContextHolder.setUserContext(email);
         return userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
@@ -411,23 +415,38 @@ public class UserService {
     }
 
     /**
-     * CACHED: Get user by ID with Redis caching (30min TTL)
+     * Search users by username (partial match)
      */
     @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.ROUND_ROBIN)
-    @Cacheable(value = "usersById", key = "#userId", unless = "#result == null")
+    @Transactional(readOnly = true)
+    public List<UserDTO> searchUsersByUsername(String username) {
+        log.debug("🔍 Searching users by username: {}", username);
+        List<User> users = userRepository.findByUsernameContainingIgnoreCase(username);
+        return users.stream()
+                .map(this::mapToDTO)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * CACHED: Get user by ID with Redis caching (30min TTL)
+     * Note: Temporarily disabled caching to avoid LinkedHashMap serialization issues
+     */
+    @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.ROUND_ROBIN)
+    // @Cacheable(value = "usersById", key = "#userId", unless = "#result == null")
     public User getUserById(Long userId) {
-        log.debug("🔍 Cache MISS: Loading User entity for ID: {}", userId);
+        log.debug("🔍 Loading User entity for ID: {}", userId);
         return userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
     }
 
     /**
      * CACHED: Get user by username with Redis caching (30min TTL)
+     * Note: Temporarily disabled caching to avoid LinkedHashMap serialization issues
      */
     @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.ROUND_ROBIN)
-    @Cacheable(value = "usersByUsername", key = "#username", unless = "#result == null")
+    // @Cacheable(value = "usersByUsername", key = "#username", unless = "#result == null")
     public User getUserByUsername(String username) {
-        log.debug("🔍 Cache MISS: Loading User entity for username: {}", username);
+        log.debug("🔍 Loading User entity for username: {}", username);
         return userRepository.findByUsername(username)
                 .orElseThrow(() -> new RuntimeException("User not found"));
     }

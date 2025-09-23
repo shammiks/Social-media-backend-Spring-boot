@@ -4,14 +4,19 @@ import com.example.DPMHC_backend.config.database.DatabaseContextHolder;
 import com.example.DPMHC_backend.config.database.annotation.ReadOnlyDB;
 import com.example.DPMHC_backend.config.database.annotation.WriteDB;
 import com.example.DPMHC_backend.dto.PostDTO;
+import com.example.DPMHC_backend.dto.cache.PageCacheWrapper;
 import com.example.DPMHC_backend.model.*;
 import com.example.DPMHC_backend.repository.*;
+import com.example.DPMHC_backend.service.MediaService;
+import com.example.DPMHC_backend.dto.MediaUploadDTO;
+import java.io.IOException;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.CachePut;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.cache.annotation.Caching;
 import org.springframework.data.domain.Page;
@@ -42,6 +47,7 @@ public class PostService {
     private final BookmarkRepository bookmarkRepository;
     private final RealTimeService realTimeService;
     private final NotificationService notificationService; // Add notification service
+    private final MediaService mediaService;
 
     /**
      * CREATE POST with cache eviction for user's posts
@@ -56,9 +62,25 @@ public class PostService {
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        String imageUrl = storeFile(image);
-        String videoUrl = storeFile(video);
-        String pdfUrl = storeFile(pdf);
+        String imageUrl = null;
+        String videoUrl = null;
+        String pdfUrl = null;
+        try {
+            if (image != null && !image.isEmpty()) {
+                MediaUploadDTO imageUpload = mediaService.uploadMedia(image, user.getId());
+                imageUrl = imageUpload.getFileUrl();
+            }
+            if (video != null && !video.isEmpty()) {
+                MediaUploadDTO videoUpload = mediaService.uploadMedia(video, user.getId());
+                videoUrl = videoUpload.getFileUrl();
+            }
+            if (pdf != null && !pdf.isEmpty()) {
+                MediaUploadDTO pdfUpload = mediaService.uploadMedia(pdf, user.getId());
+                pdfUrl = pdfUpload.getFileUrl();
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to upload file to Cloudinary", e);
+        }
 
         Post post = Post.builder()
                 .content(content)
@@ -76,23 +98,7 @@ public class PostService {
         return savedPost;
     }
 
-    private String storeFile(MultipartFile file) {
-        if (file == null || file.isEmpty()) return null;
-
-        try {
-            String uploadDir = "uploads";
-            Path uploadPath = Paths.get(uploadDir);
-            if (!Files.exists(uploadPath)) {
-                Files.createDirectories(uploadPath);
-            }
-
-            String filename = UUID.randomUUID() + "_" + file.getOriginalFilename();
-            Files.copy(file.getInputStream(), uploadPath.resolve(filename));
-            return "/uploads/" + filename;
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to store file", e);
-        }
-    }
+    // storeFile method removed: all uploads now use Cloudinary via MediaService
 
     // OPTIMIZED: GET POSTS - Public feed with single query (eliminates N+1 for users)
     // Note: Not caching paginated results as they change frequently and keys would be complex
@@ -120,9 +126,16 @@ public class PostService {
      */
     @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true)
     @Transactional(readOnly = true)
-    @Cacheable(value = "postsByUser", key = "#userId + '_' + #pageable.pageNumber + '_' + #pageable.pageSize", 
-               condition = "#pageable.pageNumber == 0", unless = "#result == null || #result.empty")
     public Page<PostDTO> getPostsByUser(Long userId, Pageable pageable, String currentUserEmail) {
+        // Try to get from cache first using wrapper (only for first page)
+        if (pageable.getPageNumber() == 0) {
+            PageCacheWrapper<PostDTO> cachedWrapper = getCachedPostsByUser(userId, pageable);
+            if (cachedWrapper != null) {
+                log.debug("🎯 Cache HIT: Retrieved posts from cache for user ID: {}", userId);
+                return cachedWrapper.toPage(pageable);
+            }
+        }
+        
         log.debug("🔍 Cache MISS: Loading posts for user ID: {}, page: {}", userId, pageable.getPageNumber());
         // Set user context for consistent routing
         DatabaseContextHolder.setUserContext(currentUserEmail);
@@ -130,8 +143,33 @@ public class PostService {
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
         // OPTIMIZED: Use optimized query with user data pre-fetched
-        return postRepository.findByUserWithUser(user, pageable)
+        Page<PostDTO> result = postRepository.findByUserWithUser(user, pageable)
                 .map(post -> mapToDTO(post, currentUserEmail));
+        
+        // Cache the result using wrapper (only for first page)
+        if (pageable.getPageNumber() == 0 && !result.isEmpty()) {
+            cachePostsByUser(userId, pageable, result);
+        }
+        
+        return result;
+    }
+    
+    /**
+     * Get cached posts by user using cache wrapper to avoid Page serialization issues
+     */
+    @Cacheable(value = "postsByUser", key = "#userId + '_' + #pageable.pageNumber + '_' + #pageable.pageSize", 
+               condition = "#pageable.pageNumber == 0", unless = "#result == null")
+    public PageCacheWrapper<PostDTO> getCachedPostsByUser(Long userId, Pageable pageable) {
+        // This method will only be called if cache is empty - return null to indicate cache miss
+        return null;
+    }
+    
+    /**
+     * Cache posts by user using wrapper to avoid Page serialization issues
+     */
+    @CachePut(value = "postsByUser", key = "#userId + '_' + #pageable.pageNumber + '_' + #pageable.pageSize")
+    public PageCacheWrapper<PostDTO> cachePostsByUser(Long userId, Pageable pageable, Page<PostDTO> page) {
+        return PageCacheWrapper.of(page);
     }
 
     @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.USER_SPECIFIC, userSpecific = true, fallbackToMaster = true)

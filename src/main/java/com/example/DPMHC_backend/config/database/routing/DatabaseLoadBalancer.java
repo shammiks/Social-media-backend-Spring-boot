@@ -77,8 +77,7 @@ public class DatabaseLoadBalancer {
         }
         
         // Get or create user affinity
-        int slaveIndex = userAffinityMap.computeIfAbsent(userId, 
-            key -> Math.abs(key.hashCode()) % 2);
+        int slaveIndex = userAffinityMap.computeIfAbsent(userId, this::calculateUserAffinityIndex);
         
         DatabaseType selectedType = DatabaseType.getSlaveType(slaveIndex);
         
@@ -180,7 +179,7 @@ public class DatabaseLoadBalancer {
      * Decrement connection count for a database
      */
     public void decrementConnectionCount(DatabaseType type) {
-        connectionCounts.merge(type, -1, (current, decrement) -> Math.max(0, current + decrement));
+        connectionCounts.merge(type, -1, this::safeDecrementConnection);
     }
     
     /**
@@ -231,5 +230,19 @@ public class DatabaseLoadBalancer {
         stats.put("connectionCount", getConnectionCount(type));
         stats.put("healthy", isHealthy(type));
         return stats;
+    }
+    
+    /**
+     * Helper method to calculate user affinity index
+     */
+    private Integer calculateUserAffinityIndex(String userId) {
+        return Math.abs(userId.hashCode()) % 2;
+    }
+    
+    /**
+     * Helper method to safely decrement connection count
+     */
+    private Integer safeDecrementConnection(Integer current, Integer decrement) {
+        return Math.max(0, current + decrement);
     }
 }

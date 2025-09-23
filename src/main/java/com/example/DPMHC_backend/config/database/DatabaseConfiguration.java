@@ -82,6 +82,9 @@ public class DatabaseConfiguration {
         config.addDataSourceProperty("autoReconnect", "true");
         config.addDataSourceProperty("failOverReadOnly", "false");
         
+        // Deadlock prevention settings - use correct MySQL syntax
+        config.setConnectionInitSql("SET SESSION innodb_lock_wait_timeout=5");
+        
         config.setPoolName("MasterCP");
         
         return new HikariDataSource(config);
