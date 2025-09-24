@@ -420,11 +420,13 @@ public class UserService {
     @ReadOnlyDB(strategy = ReadOnlyDB.LoadBalanceStrategy.ROUND_ROBIN)
     @Transactional(readOnly = true)
     public List<UserDTO> searchUsersByUsername(String username) {
-        log.debug("🔍 Searching users by username: {}", username);
-        List<User> users = userRepository.findByUsernameContainingIgnoreCase(username);
-        return users.stream()
-                .map(this::mapToDTO)
-                .collect(Collectors.toList());
+    log.debug("🔍 Searching users by username: {}", username);
+    List<User> users = userRepository.findByUsernameContainingIgnoreCase(username);
+    // Filter out admin users
+    return users.stream()
+        .filter(user -> !user.isAdmin())
+        .map(this::mapToDTO)
+        .collect(Collectors.toList());
     }
 
     /**

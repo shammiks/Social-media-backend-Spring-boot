@@ -368,6 +368,38 @@ public class NotificationService {
         }
     }
 
+    /**
+     * Create notification with User objects and priority
+     */
+    @Async
+    public void createNotification(User recipient, NotificationType type, String message,
+                                   Long entityId, Long actorId, NotificationPriority priority) {
+        try {
+            User actor = userRepository.findById(actorId)
+                    .orElseThrow(() -> new RuntimeException("Actor not found: " + actorId));
+
+            String entityType = determineEntityType(type, entityId);
+
+            NotificationBuilder builder = NotificationBuilder.builder()
+                    .recipientEmail(recipient.getEmail())
+                    .actor(actor)
+                    .type(type)
+                    .entityId(entityId)
+                    .entityType(entityType)
+                    .customMessage(message)
+                    .priority(priority)
+                    .checkDuplicates(false) // For admin reports, we want all notifications
+                    .generateContent(false) // Use custom message
+                    .build();
+
+            createNotification(builder);
+
+            log.info("Admin notification created: {} from user {} to user {}", type, actorId, recipient.getId());
+        } catch (Exception e) {
+            log.error("Error creating admin notification for recipient {} from actor {}", recipient.getId(), actorId, e);
+        }
+    }
+
     @Transactional
     public void deleteNotification(Long id) {
         Notification notification = getNotificationById(id);

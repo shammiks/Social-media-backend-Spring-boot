@@ -25,6 +25,7 @@ public enum NotificationType {
     POST_REJECTED("Your post was rejected"),
     ACCOUNT_WARNING("Account warning"),
     ACCOUNT_SUSPENDED("Account suspended"),
+    ADMIN_REPORT("New post report received"),
 
     // Group/Community Events
     GROUP_INVITE("invited you to join a group"),
