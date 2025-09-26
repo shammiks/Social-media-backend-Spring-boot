@@ -37,7 +37,6 @@ public class AdminController {
     private final UserRepository userRepository;
     private final UserWarningRepository userWarningRepository;
     private final EmailService emailService;
-    private final PostService postService;
     private final CommentRepository commentRepository;
     private final LikeRepository likeRepository;
     private final BookmarkRepository bookmarkRepository;

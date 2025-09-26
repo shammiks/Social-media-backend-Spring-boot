@@ -5,7 +5,6 @@ import com.example.DPMHC_backend.dto.*;
 import com.example.DPMHC_backend.dto.AddParticipantsRequestDTO;
 import com.example.DPMHC_backend.service.ChatService;
 import com.example.DPMHC_backend.service.UserBlockService;
-import com.example.DPMHC_backend.security.JwtAuthenticationFilter;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
