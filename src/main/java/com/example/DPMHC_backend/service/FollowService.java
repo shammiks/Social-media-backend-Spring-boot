@@ -77,10 +77,12 @@ public class FollowService {
         if (followRepository.existsByFollowerIdAndFolloweeId(followerId, followeeId)) {
             log.warn("User {} already follows user {}", followerId, followeeId);
             long followersCount = followRepository.countByFolloweeId(followeeId);
+            long followingCount = followRepository.countByFollowerId(followeeId);
             return FollowStatusDTO.builder()
                     .isFollowing(true)
                     .following(true) // Add this field for compatibility
                     .followersCount(followersCount)
+                    .followingCount(followingCount)
                     .message("Already following this user")
                     .build();
         }
@@ -96,11 +98,13 @@ public class FollowService {
         followRepository.save(follow);
 
         long followersCount = followRepository.countByFolloweeId(followeeId);
+        long followingCount = followRepository.countByFollowerId(followeeId);
 
         FollowStatusDTO result = FollowStatusDTO.builder()
                 .isFollowing(true)
                 .following(true) // Add this field for compatibility
                 .followersCount(followersCount)
+                .followingCount(followingCount)
                 .message("Successfully followed user")
                 .build();
 
@@ -121,10 +125,12 @@ public class FollowService {
         if (!followRepository.existsByFollowerIdAndFolloweeId(followerId, followeeId)) {
             log.warn("User {} is not following user {}", followerId, followeeId);
             long followersCount = followRepository.countByFolloweeId(followeeId);
+            long followingCount = followRepository.countByFollowerId(followeeId);
             return FollowStatusDTO.builder()
                     .isFollowing(false)
                     .following(false) // Add this field for compatibility
                     .followersCount(followersCount)
+                    .followingCount(followingCount)
                     .message("Not following this user")
                     .build();
         }
@@ -133,11 +139,13 @@ public class FollowService {
         log.info("Deleted {} follow relationships", deletedCount);
 
         long followersCount = followRepository.countByFolloweeId(followeeId);
+        long followingCount = followRepository.countByFollowerId(followeeId);
 
         FollowStatusDTO result = FollowStatusDTO.builder()
                 .isFollowing(false)
                 .following(false) // Add this field for compatibility
                 .followersCount(followersCount)
+                .followingCount(followingCount)
                 .message("Successfully unfollowed user")
                 .build();
 
@@ -159,17 +167,20 @@ public class FollowService {
                     .isFollowing(false)
                     .following(false)
                     .followersCount(countFollowers(followeeId))
+                    .followingCount(countFollowing(followeeId))
                     .message("Cannot follow yourself")
                     .build();
         }
 
         boolean isFollowing = followRepository.existsByFollowerIdAndFolloweeId(followerId, followeeId);
         long followersCount = countFollowers(followeeId);
+        long followingCount = countFollowing(followeeId);
 
         FollowStatusDTO result = FollowStatusDTO.builder()
                 .isFollowing(isFollowing)
                 .following(isFollowing) // Add this field for compatibility
                 .followersCount(followersCount)
+                .followingCount(followingCount)
                 .message(isFollowing ? "Following" : "Not following")
                 .build();
 

@@ -22,6 +22,9 @@ import java.net.MalformedURLException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -59,7 +62,12 @@ public class MediaService {
      * Upload media file to Cloudinary
      */
     public MediaUploadDTO uploadMedia(MultipartFile file, Long userId) throws IOException {
-        log.info("Uploading media file for user: {}", userId);
+        Instant currentTime = Instant.now();
+        String currentUTC = currentTime.atOffset(ZoneOffset.UTC).format(DateTimeFormatter.ISO_INSTANT);
+        String currentLocal = currentTime.atOffset(ZoneOffset.of("+05:30")).format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+        
+        log.info("Uploading media file for user: {} at UTC: {} | Local IST: {} | System millis: {}", 
+                userId, currentUTC, currentLocal, System.currentTimeMillis());
 
         // Validate file
         validateFile(file);
@@ -72,14 +80,43 @@ public class MediaService {
         String fileExtension = getFileExtension(originalFilename);
         String storedFilename = UUID.randomUUID().toString() + fileExtension;
 
+        // Create new Cloudinary instance for each upload to avoid cached timestamps
+        Cloudinary freshCloudinary = new Cloudinary(ObjectUtils.asMap(
+                "cloud_name", cloudinary.config.cloudName,
+                "api_key", cloudinary.config.apiKey,
+                "api_secret", cloudinary.config.apiSecret,
+                "secure", true
+        ));
+
         try {
-            // Upload to Cloudinary
-            Map uploadResult = cloudinary.uploader().upload(file.getBytes(),
-                    ObjectUtils.asMap(
-                            "public_id", "chat_media/" + storedFilename,
+            // Upload with auto-generated timestamp and extended tolerance
+            Map uploadParams = ObjectUtils.asMap(
+                    "public_id", "chat_media/" + storedFilename,
+                    "resource_type", "auto",
+                    "folder", "chat_media",
+                    "overwrite", true,
+                    "invalidate", true,
+                    "use_filename", false
+            );
+            
+            // Try multiple upload approaches to handle timestamp issues
+            Map uploadResult;
+            try {
+                // First attempt with fresh Cloudinary instance
+                uploadResult = freshCloudinary.uploader().upload(file.getBytes(), uploadParams);
+            } catch (Exception timestampError) {
+                if (timestampError.getMessage() != null && timestampError.getMessage().contains("Stale request")) {
+                    log.warn("Timestamp error detected, attempting workaround...");
+                    // Remove parameters that might cause timestamp issues and retry
+                    Map simpleParams = ObjectUtils.asMap(
                             "resource_type", "auto",
-                            "folder", "chat_media"
-                    ));
+                            "overwrite", true
+                    );
+                    uploadResult = freshCloudinary.uploader().upload(file.getBytes(), simpleParams);
+                } else {
+                    throw timestampError;
+                }
+            }
 
             // Create MediaFile entity
             MediaFile mediaFile = new MediaFile();
@@ -123,7 +160,72 @@ public class MediaService {
             return convertToMediaUploadDTO(savedFile);
 
         } catch (Exception e) {
-            log.error("Error uploading file to Cloudinary", e);
+            log.error("Error uploading file to Cloudinary: {}", e.getMessage());
+            
+            // Check if it's a stale timestamp error and retry once
+            if (e.getMessage() != null && e.getMessage().contains("Stale request")) {
+                log.warn("Stale request detected, retrying with fresh Cloudinary instance...");
+                try {
+                    // Create completely fresh Cloudinary instance for retry
+                    Cloudinary retryCloudinary = new Cloudinary(ObjectUtils.asMap(
+                            "cloud_name", cloudinary.config.cloudName,
+                            "api_key", cloudinary.config.apiKey,
+                            "api_secret", cloudinary.config.apiSecret,
+                            "secure", true
+                    ));
+                    
+                    // Retry with absolutely minimal parameters to avoid timestamp validation
+                    Map retryResult = retryCloudinary.uploader().upload(file.getBytes(),
+                            ObjectUtils.asMap(
+                                    "resource_type", "auto"
+                            ));
+                    
+                    // Process successful retry result
+                    MediaFile mediaFile = new MediaFile();
+                    mediaFile.setOriginalFilename(originalFilename);
+                    mediaFile.setStoredFilename(storedFilename);
+                    mediaFile.setFileUrl(retryResult.get("secure_url").toString());
+                    mediaFile.setFileType(file.getContentType());
+                    mediaFile.setFileSize(file.getSize());
+                    mediaFile.setMimeType(file.getContentType());
+                    mediaFile.setUploadedBy(user);
+                    mediaFile.setCloudinaryPublicId(retryResult.get("public_id").toString());
+                    
+                    // Set dimensions for images
+                    if (retryResult.containsKey("width") && retryResult.containsKey("height")) {
+                        mediaFile.setWidth((Integer) retryResult.get("width"));
+                        mediaFile.setHeight((Integer) retryResult.get("height"));
+                    }
+
+                    // Set duration for videos
+                    if (retryResult.containsKey("duration")) {
+                        Double duration = (Double) retryResult.get("duration");
+                        mediaFile.setDuration(duration.longValue());
+                    }
+
+                    // Generate thumbnail for videos
+                    if (isVideo(file.getContentType())) {
+                        String thumbnailUrl = generateVideoThumbnail(retryResult.get("public_id").toString());
+                        mediaFile.setThumbnailUrl(thumbnailUrl);
+                    } else if (isImage(file.getContentType())) {
+                        // For images, create a smaller thumbnail
+                        String thumbnailUrl = cloudinary.url()
+                                .transformation(new com.cloudinary.Transformation()
+                                        .width(200).height(200).crop("fill"))
+                                .generate(retryResult.get("public_id").toString());
+                        mediaFile.setThumbnailUrl(thumbnailUrl);
+                    }
+
+                    MediaFile savedFile = mediaFileRepository.save(mediaFile);
+                    log.info("Media file uploaded successfully on retry with ID: {}", savedFile.getId());
+                    return convertToMediaUploadDTO(savedFile);
+                    
+                } catch (Exception retryException) {
+                    log.error("Retry also failed", retryException);
+                    throw new RuntimeException("Failed to upload file after retry: " + retryException.getMessage());
+                }
+            }
+            
             throw new RuntimeException("Failed to upload file: " + e.getMessage());
         }
     }

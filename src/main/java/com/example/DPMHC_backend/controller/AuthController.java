@@ -85,11 +85,15 @@ public class AuthController {
     public ResponseEntity<String> verifyEmail(@RequestParam("token") String token) {
         try {
             userService.verifyEmail(token);
-            return ResponseEntity.ok("<h2>Email verified successfully. You can now log in to the app.</h2>");
+            // Redirect to the S3 hosted verification success page
+            return ResponseEntity.status(HttpStatus.FOUND)
+                    .header("Location", "https://html-aspirehub-login.s3.ap-northeast-1.amazonaws.com/index.html?verified=true")
+                    .build();
         } catch (RuntimeException e) {
-            return ResponseEntity
-                    .badRequest()
-                    .body("<h2>Verification failed: " + e.getMessage() + "</h2>");
+            // Redirect to the S3 hosted verification error page
+            return ResponseEntity.status(HttpStatus.FOUND)
+                    .header("Location", "https://html-aspirehub-login.s3.ap-northeast-1.amazonaws.com/index.html?verified=false&error=" + e.getMessage())
+                    .build();
         }
     }
 

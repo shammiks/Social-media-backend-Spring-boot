@@ -16,8 +16,10 @@ public class CloudinaryService {
     private final Cloudinary cloudinary;
 
     public String uploadFile(MultipartFile file, String folder) throws IOException {
+        // Let Cloudinary handle timestamp generation to avoid sync issues
         Map uploadResult = cloudinary.uploader().upload(file.getBytes(), ObjectUtils.asMap(
                 "folder", folder
+                // Removed explicit timestamp
         ));
         return uploadResult.get("secure_url").toString();
     }

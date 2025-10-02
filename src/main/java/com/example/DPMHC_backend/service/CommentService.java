@@ -215,7 +215,7 @@ public class CommentService {
 
         // Trigger notification for comment reply
         notificationService.handleCommentReply(parentComment.getUser().getEmail(), userEmail,
-                                              parentCommentId, savedReply.getId());
+                                              parentCommentId, savedReply.getId(), parentComment.getPost().getId());
 
         log.debug("✅ Reply added successfully to comment {}", parentCommentId);
         return savedReply;

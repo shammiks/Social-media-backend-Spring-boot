@@ -234,70 +234,70 @@ public class NotificationService {
     // ======================== REAL-TIME NOTIFICATION UPDATES ========================
 
     private void sendNotificationStateUpdate(Notification notification) {
-        try {
-            NotificationDTO dto = convertToDTO(notification);
-            String destination = "/topic/notifications/" + notification.getRecipient().getId();
+    try {
+        NotificationDTO dto = convertToDTO(notification);
+        String destination = "/topic/notifications/" + notification.getRecipient().getId();
 
-            // Send updated notification
-            messagingTemplate.convertAndSend(destination + "/update", dto);
+        // Send updated notification
+        messagingTemplate.convertAndSend(destination + "/update", dto);
 
-            // Send updated counts
-            Map<String, Long> counts = getNotificationCountsMap(notification.getRecipient().getEmail());
-            messagingTemplate.convertAndSend(destination + "/counts", counts);
+        // ✅ REMOVED: Don't send counts here - let the client handle it optimistically
+        // Map<String, Long> counts = getNotificationCountsMap(notification.getRecipient().getEmail());
+        // messagingTemplate.convertAndSend(destination + "/counts", counts);
 
-            log.debug("Sent notification state update for notification {} to {}",
-                    notification.getId(), destination);
+        log.debug("Sent notification state update for notification {} to {}",
+                notification.getId(), destination);
 
-        } catch (Exception e) {
-            log.error("Error sending notification state update for notification {}: {}",
-                    notification.getId(), e.getMessage());
-        }
+    } catch (Exception e) {
+        log.error("Error sending notification state update for notification {}: {}",
+                notification.getId(), e.getMessage());
     }
+}
 
     private void sendNotificationDeletionUpdate(Notification notification) {
-        try {
-            String destination = "/topic/notifications/" + notification.getRecipient().getId();
+    try {
+        String destination = "/topic/notifications/" + notification.getRecipient().getId();
 
-            // Send deletion notification
-            messagingTemplate.convertAndSend(destination + "/delete", Map.of(
-                    "notificationId", notification.getId(),
-                    "type", "DELETED"
-            ));
+        // Send deletion notification
+        messagingTemplate.convertAndSend(destination + "/delete", Map.of(
+                "notificationId", notification.getId(),
+                "type", "DELETED"
+        ));
 
-            // Send updated counts
-            Map<String, Long> counts = getNotificationCountsMap(notification.getRecipient().getEmail());
-            messagingTemplate.convertAndSend(destination + "/counts", counts);
+        // ✅ REMOVED: Don't send counts here
+        // Map<String, Long> counts = getNotificationCountsMap(notification.getRecipient().getEmail());
+        // messagingTemplate.convertAndSend(destination + "/counts", counts);
 
-            log.debug("Sent notification deletion update for notification {} to {}",
-                    notification.getId(), destination);
+        log.debug("Sent notification deletion update for notification {} to {}",
+                notification.getId(), destination);
 
-        } catch (Exception e) {
-            log.error("Error sending notification deletion update for notification {}: {}",
-                    notification.getId(), e.getMessage());
-        }
+    } catch (Exception e) {
+        log.error("Error sending notification deletion update for notification {}: {}",
+                notification.getId(), e.getMessage());
     }
+}
 
     private void sendBulkNotificationUpdate(User user) {
-        try {
-            String destination = "/topic/notifications/" + user.getId();
+    try {
+        String destination = "/topic/notifications/" + user.getId();
 
-            // Send updated counts
-            Map<String, Long> counts = getNotificationCountsMap(user.getEmail());
-            messagingTemplate.convertAndSend(destination + "/counts", counts);
+        // Send refresh signal to trigger client-side fetch
+        messagingTemplate.convertAndSend(destination + "/refresh", Map.of(
+                "type", "BULK_UPDATE",
+                "timestamp", System.currentTimeMillis()
+        ));
 
-            // Send refresh signal to trigger client-side fetch
-            messagingTemplate.convertAndSend(destination + "/refresh", Map.of(
-                    "type", "BULK_UPDATE",
-                    "timestamp", System.currentTimeMillis()
-            ));
+        // ✅ REMOVED: Don't send counts here - let client refetch if needed
+        // Map<String, Long> counts = getNotificationCountsMap(user.getEmail());
+        // messagingTemplate.convertAndSend(destination + "/counts", counts);
 
-            log.debug("Sent bulk notification update to {}", destination);
+        log.debug("Sent bulk notification update to {}", destination);
 
-        } catch (Exception e) {
-            log.error("Error sending bulk notification update for user {}: {}",
-                    user.getEmail(), e.getMessage());
-        }
+    } catch (Exception e) {
+        log.error("Error sending bulk notification update for user {}: {}",
+                user.getEmail(), e.getMessage());
     }
+}
 
     // ======================== CORE NOTIFICATION OPERATIONS ========================
 
@@ -545,9 +545,10 @@ public class NotificationService {
     }
 
     @Async
-    public void handleCommentReply(String commentOwnerEmail, String replierEmail, Long commentId, Long replyId) {
+    public void handleCommentReply(String commentOwnerEmail, String replierEmail, Long commentId, Long replyId, Long postId) {
         if (!commentOwnerEmail.equals(replierEmail)) {
-            createSocialNotification(commentOwnerEmail, replierEmail, NotificationType.REPLY, replyId, "COMMENT");
+            // Use postId as entityId so frontend can navigate to the correct post
+            createSocialNotification(commentOwnerEmail, replierEmail, NotificationType.REPLY, postId, "POST");
         }
     }
 
@@ -596,23 +597,22 @@ public class NotificationService {
     // ======================== REAL-TIME NOTIFICATIONS ========================
 
     private void sendRealTimeNotification(Notification notification) {
-        try {
-            NotificationDTO dto = convertToDTO(notification);
-            String destination = "/topic/notifications/" + notification.getRecipient().getId();
+    try {
+        NotificationDTO dto = convertToDTO(notification);
+        String destination = "/topic/notifications/" + notification.getRecipient().getId();
 
-            // Send individual notification
-            messagingTemplate.convertAndSend(destination, dto);
+        // Send individual notification
+        messagingTemplate.convertAndSend(destination, dto);
 
-            // Send updated counts
-            Map<String, Long> counts = getNotificationCountsMap(notification.getRecipient().getEmail());
-            messagingTemplate.convertAndSend(destination + "/counts", counts);
+        // ✅ ONLY send counts when a NEW notification arrives, not for updates
+        Map<String, Long> counts = getNotificationCountsMap(notification.getRecipient().getEmail());
+        messagingTemplate.convertAndSend(destination + "/counts", counts);
 
-            log.debug("Real-time notification sent to {}", destination);
-        } catch (Exception e) {
-            log.error("Error sending real-time notification", e);
-        }
+        log.debug("Real-time notification sent to {}", destination);
+    } catch (Exception e) {
+        log.error("Error sending real-time notification", e);
     }
-
+}
     private Map<String, Long> getNotificationCountsMap(String email) {
         Map<String, Long> counts = new HashMap<>();
         counts.put("unread", getUnreadCount(email));
@@ -830,9 +830,10 @@ public class NotificationService {
             }
         }
         
-        // For COMMENT notifications, check within the last 30 seconds to prevent spam/race conditions
+        // For COMMENT notifications, check within the last 5 seconds to prevent spam/race conditions only
+        // This allows multiple comments from the same user but prevents accidental double-clicks
         if (builder.getType() == NotificationType.COMMENT) {
-            java.util.Date thirtySecondsAgo = new java.util.Date(System.currentTimeMillis() - 30 * 1000);
+            java.util.Date fiveSecondsAgo = new java.util.Date(System.currentTimeMillis() - 5 * 1000);
             
             List<Notification> recentComments = notificationRepository
                     .findByEntityIdAndEntityTypeAndType(builder.getEntityId(), builder.getEntityType(), builder.getType())
@@ -840,11 +841,11 @@ public class NotificationService {
                     .filter(n -> n.getRecipient().getId().equals(recipient.getId()) &&
                                 n.getActor() != null &&
                                 n.getActor().getId().equals(builder.getActor().getId()) &&
-                                n.getCreatedAt().after(thirtySecondsAgo))
+                                n.getCreatedAt().after(fiveSecondsAgo))
                     .toList();
             
             if (!recentComments.isEmpty()) {
-                log.warn("Duplicate COMMENT notification prevented (within 30 seconds): actor={}, recipient={}, entityId={}, entityType={}", 
+                log.warn("Duplicate COMMENT notification prevented (within 5 seconds): actor={}, recipient={}, entityId={}, entityType={}", 
                          builder.getActor() != null ? builder.getActor().getEmail() : "null", 
                          recipient.getEmail(), builder.getEntityId(), builder.getEntityType());
                 return true;

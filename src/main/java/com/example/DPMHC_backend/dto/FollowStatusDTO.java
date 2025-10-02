@@ -9,5 +9,6 @@ public class FollowStatusDTO {
     private boolean isFollowing;
     private boolean following;      // Alternative field name
     private long followersCount;
+    private long followingCount;
     private String message;
 }

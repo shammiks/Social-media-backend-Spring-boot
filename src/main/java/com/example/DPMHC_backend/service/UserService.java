@@ -19,7 +19,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.CacheEvict;
-import org.springframework.cache.annotation.Cacheable;
 import org.springframework.cache.annotation.Caching;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -90,11 +89,6 @@ public class UserService {
             throw new RuntimeException("Email already registered");
         }
 
-//        if (userRepository.existsByEmail(user.getEmail())) {
-//            throw new RuntimeException("Email already registered");
-//        }
-
-        // Check for case-insensitive username existence
         if (userRepository.existsByUsernameIgnoreCase(normalizedUsername)) {
             throw new RuntimeException("Username already taken");
         };
