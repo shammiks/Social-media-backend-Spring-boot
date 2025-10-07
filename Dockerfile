@@ -29,7 +29,7 @@ COPY src ./src
 RUN ./mvnw clean package -DskipTests -B
 
 # Create a smaller runtime image
-FROM openjdk:21-jre-slim
+FROM eclipse-temurin:21-jre-jammy
 
 # Set working directory
 WORKDIR /app
