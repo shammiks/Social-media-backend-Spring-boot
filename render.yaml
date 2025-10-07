@@ -7,7 +7,7 @@ services:
   - type: web
     name: social-media-backend
     runtime: docker
-    plan: starter  # You can upgrade to standard/pro as needed
+    plan: free  # Free tier (sleeps after 15 min of inactivity)
     region: oregon  # Choose your preferred region
     branch: main
     dockerfilePath: ./Dockerfile
@@ -78,7 +78,7 @@ services:
   # Redis Service
   - type: redis
     name: social-media-redis
-    plan: starter  # Free tier available
+    plan: free  # Free tier (25MB memory)
     region: oregon
     ipAllowList: []
 
@@ -87,6 +87,6 @@ databases:
   - name: social-media-db
     databaseName: socialmedia
     user: socialmedia_user
-    plan: starter  # Free tier available
+    plan: free  # Free tier (1GB storage)
     region: oregon
     ipAllowList: []  # Empty means allow all (adjust for security)
