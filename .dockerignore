@@ -1,6 +1,6 @@
 # Maven
 target/
-!.mvn/wrapper/maven-wrapper.jar
+!.mvn/
 !**/src/main/**/target/
 !**/src/test/**/target/
 
@@ -57,4 +57,3 @@ uploads/
 
 # Maven debug
 .mvn/timing.properties
-.mvn/wrapper/maven-wrapper.properties
