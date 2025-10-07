@@ -75,6 +75,13 @@ services:
     # buildCommand: "./mvnw clean package -DskipTests"
     # startCommand: "java -jar target/*.jar"
 
+  # Redis Service
+  - type: redis
+    name: social-media-redis
+    plan: starter  # Free tier available
+    region: oregon
+    ipAllowList: []
+
 # Database Service
 databases:
   - name: social-media-db
@@ -83,11 +90,3 @@ databases:
     plan: starter  # Free tier available
     region: oregon
     ipAllowList: []  # Empty means allow all (adjust for security)
-
-# Redis Service  
-services:
-  - type: redis
-    name: social-media-redis
-    plan: starter  # Free tier available
-    region: oregon
-    ipAllowList: []
