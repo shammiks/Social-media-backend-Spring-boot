@@ -1,0 +1,60 @@
+# Maven
+target/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+# IDE
+.idea
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Runtime
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+
+# Node modules (if any frontend tools)
+node_modules/
+
+# Temp files
+*.tmp
+*.temp
+
+# Git
+.git
+.gitignore
+
+# Documentation
+*.md
+!README.md
+
+# Local env files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Local uploads (use Cloudinary in production)
+uploads/
+
+# Database files
+*.db
+*.sqlite
+
+# Maven debug
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.properties

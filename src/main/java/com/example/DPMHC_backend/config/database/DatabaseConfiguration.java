@@ -11,6 +11,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
+import org.springframework.context.annotation.Profile;
 import org.springframework.orm.jpa.JpaTransactionManager;
 import org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean;
 import org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter;
@@ -24,11 +25,13 @@ import java.util.Properties;
 
 /**
  * Main database configuration class for master-slave setup
+ * Only active in non-production profiles
  */
 @Configuration
 @EnableConfigurationProperties(DatabaseProperties.class)
 @RequiredArgsConstructor
 @Slf4j
+@Profile("!prod")  // Don't activate this configuration in production
 public class DatabaseConfiguration {
     
     private final DatabaseProperties databaseProperties;
