@@ -112,41 +112,41 @@ public class RedisConfig {
     @Bean
     @Primary
     public CacheManager cacheManager(LettuceConnectionFactory connectionFactory, ObjectMapper redisObjectMapper) {
-        // Default cache configuration with socialmedia prefix and Java 8 time support
+        // Default cache configuration with socialmedia prefix and Java 8 time support (reduced TTL for memory optimization)
         RedisCacheConfiguration defaultConfig = RedisCacheConfiguration.defaultCacheConfig()
                 .serializeKeysWith(org.springframework.data.redis.serializer.RedisSerializationContext.SerializationPair
                         .fromSerializer(new StringRedisSerializer()))
                 .serializeValuesWith(org.springframework.data.redis.serializer.RedisSerializationContext.SerializationPair
                         .fromSerializer(new GenericJackson2JsonRedisSerializer(redisObjectMapper)))
-                .entryTtl(Duration.ofMinutes(30))
+                .entryTtl(Duration.ofMinutes(10))  // Reduced from 30 to 10 minutes
                 .prefixCacheNameWith("socialmedia:")
                 .disableCachingNullValues();
 
-        // Cache-specific configurations with different TTLs
+        // Cache-specific configurations with reduced TTLs for memory optimization
         Map<String, RedisCacheConfiguration> cacheConfigurations = new HashMap<>();
         
-        // User caches - frequently accessed, longer TTL
-        cacheConfigurations.put("users", defaultConfig.entryTtl(Duration.ofMinutes(30)));
-        cacheConfigurations.put("user-emails", defaultConfig.entryTtl(Duration.ofMinutes(15)));
-        cacheConfigurations.put("user-profiles", defaultConfig.entryTtl(Duration.ofMinutes(20)));
+        // User caches - frequently accessed, but reduced TTL
+        cacheConfigurations.put("users", defaultConfig.entryTtl(Duration.ofMinutes(10)));  // Reduced from 30
+        cacheConfigurations.put("user-emails", defaultConfig.entryTtl(Duration.ofMinutes(5)));  // Reduced from 15
+        cacheConfigurations.put("user-profiles", defaultConfig.entryTtl(Duration.ofMinutes(8)));  // Reduced from 20
         
         // Optimized user lookup caches
-        cacheConfigurations.put("usersByEmail", defaultConfig.entryTtl(Duration.ofMinutes(5)));
-        cacheConfigurations.put("usersById", defaultConfig.entryTtl(Duration.ofMinutes(10)));
-        cacheConfigurations.put("usersByUsername", defaultConfig.entryTtl(Duration.ofMinutes(10)));
+        cacheConfigurations.put("usersByEmail", defaultConfig.entryTtl(Duration.ofMinutes(3)));  // Reduced from 5
+        cacheConfigurations.put("usersById", defaultConfig.entryTtl(Duration.ofMinutes(5)));  // Reduced from 10
+        cacheConfigurations.put("usersByUsername", defaultConfig.entryTtl(Duration.ofMinutes(5)));  // Reduced from 10
         
-        // Post caches - moderate TTL for content
-        cacheConfigurations.put("posts", defaultConfig.entryTtl(Duration.ofMinutes(10)));
-        cacheConfigurations.put("user-posts", defaultConfig.entryTtl(Duration.ofMinutes(5)));
-        cacheConfigurations.put("post-comments", defaultConfig.entryTtl(Duration.ofMinutes(5)));
+        // Post caches - reduced TTL for content
+        cacheConfigurations.put("posts", defaultConfig.entryTtl(Duration.ofMinutes(5)));  // Reduced from 10
+        cacheConfigurations.put("user-posts", defaultConfig.entryTtl(Duration.ofMinutes(3)));  // Reduced from 5
+        cacheConfigurations.put("post-comments", defaultConfig.entryTtl(Duration.ofMinutes(3)));  // Reduced from 5
         
-        // Notification caches - short TTL for real-time data
-        cacheConfigurations.put("notification-counts", defaultConfig.entryTtl(Duration.ofMinutes(2)));
-        cacheConfigurations.put("notification-stats", defaultConfig.entryTtl(Duration.ofMinutes(5)));
+        // Notification caches - very short TTL for real-time data
+        cacheConfigurations.put("notification-counts", defaultConfig.entryTtl(Duration.ofMinutes(1)));  // Reduced from 2
+        cacheConfigurations.put("notification-stats", defaultConfig.entryTtl(Duration.ofMinutes(2)));  // Reduced from 5
         
-        // Chat caches - moderate TTL
-        cacheConfigurations.put("chat-lists", defaultConfig.entryTtl(Duration.ofMinutes(10)));
-        cacheConfigurations.put("chat-messages", defaultConfig.entryTtl(Duration.ofMinutes(15)));
+        // Chat caches - reduced TTL
+        cacheConfigurations.put("chat-lists", defaultConfig.entryTtl(Duration.ofMinutes(5)));  // Reduced from 10
+        cacheConfigurations.put("chat-messages", defaultConfig.entryTtl(Duration.ofMinutes(8)));  // Reduced from 15
         
         // Social relationship caches
         cacheConfigurations.put("followers", defaultConfig.entryTtl(Duration.ofMinutes(15)));

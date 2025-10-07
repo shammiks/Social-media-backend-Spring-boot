@@ -48,8 +48,8 @@ USER spring:spring
 # Expose the port (Render uses PORT environment variable)
 EXPOSE 8080
 
-# Set JVM options for container environment
-ENV JAVA_OPTS="-Xmx512m -Xms256m -XX:+UseG1GC -XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
+# Set JVM options for container environment with Render's 512MB memory limit
+ENV JAVA_OPTS="-Xmx350m -Xms150m -XX:+UseG1GC -XX:+UseContainerSupport -XX:MaxRAMPercentage=70.0 -XX:+DisableExplicitGC -XX:G1HeapRegionSize=16m"
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
