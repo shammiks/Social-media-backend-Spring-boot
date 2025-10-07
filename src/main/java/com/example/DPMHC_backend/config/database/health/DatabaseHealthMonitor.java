@@ -5,6 +5,7 @@ import com.example.DPMHC_backend.config.database.DatabaseType;
 import com.example.DPMHC_backend.config.database.routing.DatabaseLoadBalancer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Profile;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -18,8 +19,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Service for monitoring database health and managing failover
+ * Only enabled for development profile (master-slave setup)
  */
 @Service
+@Profile("dev")
 @RequiredArgsConstructor
 @Slf4j
 public class DatabaseHealthMonitor {

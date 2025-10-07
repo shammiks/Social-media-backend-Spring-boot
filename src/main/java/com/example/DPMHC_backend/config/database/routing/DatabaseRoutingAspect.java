@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
+import org.springframework.context.annotation.Profile;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,9 +18,11 @@ import java.lang.reflect.Method;
 
 /**
  * AOP Aspect for database routing based on annotations
+ * Only enabled for development profile (master-slave setup)
  */
 @Aspect
 @Component
+@Profile("dev")
 @Order(0) // Execute before transaction aspect
 @RequiredArgsConstructor
 @Slf4j

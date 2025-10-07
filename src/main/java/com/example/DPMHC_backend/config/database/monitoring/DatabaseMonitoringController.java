@@ -4,6 +4,7 @@ import com.example.DPMHC_backend.config.database.DatabaseType;
 import com.example.DPMHC_backend.config.database.health.DatabaseHealthMonitor;
 import com.example.DPMHC_backend.config.database.routing.DatabaseLoadBalancer;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.annotation.Profile;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -12,9 +13,11 @@ import java.util.Map;
 
 /**
  * REST controller for database monitoring and management
+ * Only available in development profile (master-slave setup)
  */
 @RestController
 @RequestMapping("/api/admin/database")
+@Profile("dev")
 @RequiredArgsConstructor
 public class DatabaseMonitoringController {
     

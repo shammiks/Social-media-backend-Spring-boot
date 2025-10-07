@@ -3,6 +3,7 @@ package com.example.DPMHC_backend.config.database.routing;
 import com.example.DPMHC_backend.config.database.DatabaseType;
 import com.example.DPMHC_backend.config.database.annotation.ReadOnlyDB;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 import java.util.concurrent.atomic.AtomicInteger;
@@ -12,8 +13,10 @@ import java.util.Map;
 
 /**
  * Load balancer for distributing read operations across slave databases
+ * Only enabled for development profile (master-slave setup)
  */
 @Component
+@Profile("dev")
 @Slf4j
 public class DatabaseLoadBalancer {
     
