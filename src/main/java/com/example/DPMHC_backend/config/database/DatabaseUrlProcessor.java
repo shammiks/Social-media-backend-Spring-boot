@@ -24,7 +24,13 @@ public class DatabaseUrlProcessor {
                 // Parse the DATABASE_URL
                 URI dbUri = new URI(databaseUrl);
                 
-                String jdbcUrl = "jdbc:postgresql://" + dbUri.getHost() + ":" + dbUri.getPort() + dbUri.getPath();
+                // Handle default PostgreSQL port if not specified
+                int port = dbUri.getPort();
+                if (port == -1) {
+                    port = 5432; // Default PostgreSQL port
+                }
+                
+                String jdbcUrl = "jdbc:postgresql://" + dbUri.getHost() + ":" + port + dbUri.getPath();
                 String username = dbUri.getUserInfo().split(":")[0];
                 String password = dbUri.getUserInfo().split(":")[1];
                 
