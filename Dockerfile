@@ -1,17 +1,13 @@
 # ===========================================
-# DOCKERFILE FOR RENDER.COM DEPLOYMENT
+# OPTIMIZED DOCKERFILE FOR RENDER FREE TIER
 # ===========================================
 
-# Use OpenJDK 21 as base image (matches your pom.xml)
-FROM openjdk:21-jdk-slim
+# Stage 1: Build
+FROM eclipse-temurin:21-jdk-jammy AS builder
 
-# Set working directory
 WORKDIR /app
 
-# Install curl for health checks (optional)
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-
-# Copy Maven wrapper and pom.xml first (for better Docker layer caching)
+# Copy Maven wrapper and pom.xml
 COPY mvnw ./
 COPY .mvn .mvn
 COPY pom.xml ./
@@ -19,41 +15,54 @@ COPY pom.xml ./
 # Make Maven wrapper executable
 RUN chmod +x ./mvnw
 
-# Download dependencies (this layer will be cached unless pom.xml changes)
+# Download dependencies (cached layer)
 RUN ./mvnw dependency:go-offline -B
 
 # Copy source code
 COPY src ./src
 
-# Build the application
+# Build application (skip tests to save memory)
 RUN ./mvnw clean package -DskipTests -B
 
-# Create a smaller runtime image
+# Stage 2: Runtime (smaller image)
 FROM eclipse-temurin:21-jre-jammy
 
-# Set working directory
 WORKDIR /app
 
 # Install curl for health checks
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl && \
+    rm -rf /var/lib/apt/lists/*
 
-# Copy the built JAR from the previous stage
-COPY --from=0 /app/target/*.jar app.jar
+# Copy JAR from builder
+COPY --from=builder /app/target/*.jar app.jar
 
-# Create a non-root user for security
-RUN addgroup --system spring && adduser --system spring --ingroup spring
-RUN chown spring:spring app.jar
+# Create non-root user
+RUN groupadd -r spring && useradd -r -g spring spring && \
+    chown spring:spring app.jar
+
 USER spring:spring
 
-# Expose the port (Render uses PORT environment variable)
+# Expose port
 EXPOSE 8080
 
-# Set JVM options for container environment with Render's 512MB memory limit (more aggressive)
-ENV JAVA_OPTS="-Xmx300m -Xms100m -XX:+UseG1GC -XX:+UseContainerSupport -XX:MaxRAMPercentage=60.0 -XX:+DisableExplicitGC -XX:G1HeapRegionSize=8m -XX:MaxGCPauseMillis=50"
+# JVM options optimized for 512MB RAM
+# Allocating 384MB max heap, 100MB min heap
+ENV JAVA_OPTS="-Xmx384m \
+-Xms100m \
+-XX:+UseG1GC \
+-XX:MaxGCPauseMillis=100 \
+-XX:+UseContainerSupport \
+-XX:MaxRAMPercentage=75.0 \
+-XX:+DisableExplicitGC \
+-XX:+ExitOnOutOfMemoryError \
+-XX:G1HeapRegionSize=4m \
+-XX:InitiatingHeapOccupancyPercent=70 \
+-Djava.security.egd=file:/dev/./urandom"
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD curl -f http://localhost:8080/actuator/health || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD curl -f http://localhost:${PORT:-8080}/actuator/health || exit 1
 
-# Run the application with production profile
-ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar -Dspring.profiles.active=prod app.jar"]
+# Run application
+ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar app.jar"]

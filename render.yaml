@@ -1,92 +1,73 @@
-# ===========================================
-# RENDER.COM DEPLOYMENT CONFIGURATION
-# ===========================================
-
 services:
-  # Main Spring Boot Application
+  # Spring Boot Application
   - type: web
-    name: social-media-backend
+    name: dpmhc-backend
     runtime: docker
-    plan: free  # Free tier (sleeps after 15 min of inactivity)
-    region: oregon  # Choose your preferred region
+    plan: free
+    region: oregon
     branch: main
     dockerfilePath: ./Dockerfile
     
-    # Environment Variables
     envVars:
       - key: SPRING_PROFILES_ACTIVE
         value: prod
       
-      # Database Configuration (will be auto-populated by Render PostgreSQL)
+      # Database (auto-populated from Render PostgreSQL service)
       - key: DATABASE_URL
         fromDatabase:
-          name: social-media-db
+          name: dpmhc-db
           property: connectionString
       
-      - key: DB_USERNAME
-        fromDatabase:
-          name: social-media-db
-          property: user
-      
-      - key: DB_PASSWORD
-        fromDatabase:
-          name: social-media-db
-          property: password
-      
-      # Redis Configuration (will be auto-populated by Render Redis)
+      # Redis (auto-populated from Render Redis service)
       - key: REDIS_URL
         fromService:
-          name: social-media-redis
+          name: dpmhc-redis
           type: redis
           property: connectionString
       
-      # Note: All secrets below should be set manually in Render Dashboard
-      # This keeps sensitive credentials out of your code repository
+      # Memory optimization environment variable
+      - key: JAVA_TOOL_OPTIONS
+        value: "-Xmx384m -Xms100m -XX:+UseG1GC"
       
-      # JWT Secret (Set in Dashboard - generate a strong 32+ character secret)
-      # - key: JWT_SECRET
-      #   value: [SET_IN_DASHBOARD]
-      
-      # Cloudinary Configuration (Set in Dashboard)
-      # - key: CLOUDINARY_CLOUD_NAME
-      #   value: [SET_IN_DASHBOARD]
-      
-      # - key: CLOUDINARY_API_KEY
-      #   value: [SET_IN_DASHBOARD]
-      
-      # - key: CLOUDINARY_API_SECRET
-      #   value: [SET_IN_DASHBOARD]
-      
-      # Email Configuration (Set in Dashboard)
-      # - key: MAIL_USERNAME
-      #   value: [SET_IN_DASHBOARD]
-      
-      # - key: MAIL_PASSWORD
-      #   value: [SET_IN_DASHBOARD]
-      
-      # Application Base URL (Set in Dashboard after deployment)
-      # - key: APP_BASE_URL
-      #   value: [SET_AFTER_DEPLOYMENT]
+      # IMPORTANT: Set these manually in Render Dashboard under Environment Variables
+      # DO NOT commit sensitive credentials to Git!
+      # 
+      # Required Environment Variables to Set in Dashboard:
+      # - JWT_SECRET: Generate with: openssl rand -base64 32
+      # - CLOUDINARY_CLOUD_NAME: Your Cloudinary cloud name
+      # - CLOUDINARY_API_KEY: Your Cloudinary API key
+      # - CLOUDINARY_API_SECRET: Your Cloudinary API secret
+      # - MAIL_USERNAME: Your Gmail address
+      # - MAIL_PASSWORD: Your Gmail app password (not regular password)
+      # - APP_BASE_URL: Your Render app URL (e.g., https://dpmhc-backend.onrender.com)
     
-    # Health Check
     healthCheckPath: /actuator/health
     
-    # Build Command (if not using Dockerfile)
+    # Auto-deploy on push to main branch
+    autoDeploy: true
+    
+    # Build command (optional, Docker handles this)
     # buildCommand: "./mvnw clean package -DskipTests"
-    # startCommand: "java -jar target/*.jar"
+    
+    # Disk space for logs (minimal for free tier)
+    disk:
+      name: data
+      mountPath: /app/logs
+      sizeGB: 1
 
-  # Redis Service
+  # Redis Cache Service
   - type: redis
-    name: social-media-redis
-    plan: free  # Free tier (25MB memory)
+    name: dpmhc-redis
+    plan: free
     region: oregon
+    maxmemoryPolicy: allkeys-lru
     ipAllowList: []
 
-# Database Service
+# PostgreSQL Database
 databases:
-  - name: social-media-db
-    databaseName: socialmedia
-    user: socialmedia_user
-    plan: free  # Free tier (1GB storage)
+  - name: dpmhc-db
+    databaseName: dpmhc
+    user: dpmhc_user
+    plan: free
     region: oregon
-    ipAllowList: []  # Empty means allow all (adjust for security)
+    ipAllowList: []
