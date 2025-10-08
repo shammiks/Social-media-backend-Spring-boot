@@ -50,10 +50,10 @@ services:
     # buildCommand: "./mvnw clean package -DskipTests"
     
     # Disk space for logs (minimal for free tier)
-    disk:
-      name: data
-      mountPath: /app/logs
-      sizeGB: 1
+    # disk:
+    #   name: data
+    #   mountPath: /app/logs
+    #   sizeGB: 1
 
   # Redis Cache Service
   - type: redis
